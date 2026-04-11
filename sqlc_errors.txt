@@ -1,0 +1,16 @@
+﻿sqlc : # package db
+At line:1 char:1
++ sqlc generate 2>&1 | 
+Out-File -FilePath C:\Users\u
+ser\Documents\Devel ...
++ ~~~~~~~~~~~~~~~~~~
+    + CategoryInfo           
+   : NotSpecified: (# packa  
+  ge db:String) [], Remote   
+ Exception
+    + FullyQualifiedErrorId  
+   : NativeCommandError
+ 
+db\queries\main.sql:274:61: 
+column "file_url" does not 
+exist
