@@ -33,7 +33,7 @@ func (h *QuizSubmissionHandler) CreateQuizSubmission(w http.ResponseWriter, r *h
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -41,7 +41,7 @@ func (h *QuizSubmissionHandler) CreateQuizSubmission(w http.ResponseWriter, r *h
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		middleware.SendError(w, "Could not start transaction", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not start transaction", err)
 		return
 	}
 	defer tx.Rollback()
@@ -55,7 +55,7 @@ func (h *QuizSubmissionHandler) CreateQuizSubmission(w http.ResponseWriter, r *h
 		Status:    "completed",
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not create submission", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create submission", err)
 		return
 	}
 
@@ -71,13 +71,13 @@ func (h *QuizSubmissionHandler) CreateQuizSubmission(w http.ResponseWriter, r *h
 			SelectedOptionID:  selectedOptionID,
 		})
 		if err != nil {
-			middleware.SendError(w, "Could not create answer", http.StatusInternalServerError)
+			middleware.InternalError(w, "Could not create answer", err)
 			return
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		middleware.SendError(w, "Could not commit transaction", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not commit transaction", err)
 		return
 	}
 
@@ -114,7 +114,7 @@ func (h *QuizSubmissionHandler) GetQuizSubmissions(w http.ResponseWriter, r *htt
 		StudentID: studentID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch submissions", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch submissions", err)
 		return
 	}
 
@@ -129,13 +129,13 @@ func (h *QuizSubmissionHandler) GetQuizSubmissionByID(w http.ResponseWriter, r *
 
 	submission, err := h.Queries.GetQuizSubmissionByID(r.Context(), submissionID)
 	if err != nil {
-		middleware.SendError(w, "Submission not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Submission not found", err)
 		return
 	}
 
 	// Basic authorization check
 	if !middleware.IsAdmin(userCtx.RoleName) && submission.StudentID != userCtx.UserID && submission.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to view this submission", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this submission", err)
 		return
 	}
 
@@ -155,3 +155,6 @@ func (h *QuizSubmissionHandler) GradeQuizSubmission(w http.ResponseWriter, r *ht
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{"submission_id": submissionID, "score": req.Score, "status": "graded"})
 }
+
+
+

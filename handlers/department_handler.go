@@ -30,7 +30,7 @@ func (h *DepartmentHandler) CreateDepartment(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -40,7 +40,7 @@ func (h *DepartmentHandler) CreateDepartment(w http.ResponseWriter, r *http.Requ
 		DepartmentName: req.DepartmentName,
 	})
 	if existing.DepartmentID != uuid.Nil {
-		middleware.SendError(w, "Department already exists", http.StatusConflict)
+		middleware.SendError(w, "Department already exists", http.StatusConflict, "CONFLICT", nil)
 		return
 	}
 
@@ -55,7 +55,7 @@ func (h *DepartmentHandler) CreateDepartment(w http.ResponseWriter, r *http.Requ
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create department", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create department", err)
 		return
 	}
 
@@ -80,7 +80,7 @@ func (h *DepartmentHandler) GetDepartments(w http.ResponseWriter, r *http.Reques
 
 	departments, err := h.Queries.GetDepartmentsBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch departments", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch departments", err)
 		return
 	}
 
@@ -91,7 +91,7 @@ func (h *DepartmentHandler) UpdateDepartment(w http.ResponseWriter, r *http.Requ
 	deptIDStr := chi.URLParam(r, "departmentId")
 	deptID, err := uuid.Parse(deptIDStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid department ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid department ID", err)
 		return
 	}
 
@@ -106,7 +106,7 @@ func (h *DepartmentHandler) UpdateDepartment(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -115,7 +115,7 @@ func (h *DepartmentHandler) UpdateDepartment(w http.ResponseWriter, r *http.Requ
 		SchoolID:     schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Department not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Department not found", err)
 		return
 	}
 
@@ -131,7 +131,7 @@ func (h *DepartmentHandler) UpdateDepartment(w http.ResponseWriter, r *http.Requ
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not update department", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update department", err)
 		return
 	}
 
@@ -165,10 +165,13 @@ func (h *DepartmentHandler) DeleteDepartment(w http.ResponseWriter, r *http.Requ
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not delete department", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete department", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Department deleted successfully"})
 }
+
+
+

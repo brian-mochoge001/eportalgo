@@ -65,7 +65,7 @@ func (h *SchoolHandler) RegisterSchool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -79,7 +79,7 @@ func (h *SchoolHandler) RegisterSchool(w http.ResponseWriter, r *http.Request) {
 		Subdomain:  sql.NullString{String: req.Subdomain, Valid: req.Subdomain != ""},
 	})
 	if existing.SchoolID != uuid.Nil {
-		middleware.SendError(w, "School with this name or subdomain already exists", http.StatusConflict)
+		middleware.SendError(w, "School with this name or subdomain already exists", http.StatusConflict, "CONFLICT", nil)
 		return
 	}
 
@@ -105,14 +105,14 @@ func (h *SchoolHandler) RegisterSchool(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("Failed to create school", "error", err)
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
 	// Find Role
 	role, err := h.Queries.GetRoleByName(r.Context(), req.AdminRoleName)
 	if err != nil {
-		middleware.SendError(w, fmt.Sprintf("Role '%s' not found", req.AdminRoleName), http.StatusInternalServerError)
+		middleware.InternalError(w, fmt.Sprintf("Role '%s' not found", req.AdminRoleName), err)
 		return
 	}
 
@@ -128,7 +128,7 @@ func (h *SchoolHandler) RegisterSchool(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("Failed to create admin user", "error", err)
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
@@ -170,7 +170,7 @@ func (h *SchoolHandler) VerifySchool(w http.ResponseWriter, r *http.Request) {
 	schoolIDStr := chi.URLParam(r, "schoolId")
 	schoolID, err := uuid.Parse(schoolIDStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid school ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid school ID", err)
 		return
 	}
 
@@ -178,22 +178,22 @@ func (h *SchoolHandler) VerifySchool(w http.ResponseWriter, r *http.Request) {
 		Status string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	if req.Status != "verified" && req.Status != "rejected" {
-		middleware.SendError(w, "Invalid status. Must be 'verified' or 'rejected'", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid status. Must be 'verified' or 'rejected'", err)
 		return
 	}
 
 	school, err := h.Queries.GetSchoolWithAdmin(r.Context(), schoolID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			middleware.SendError(w, "School not found", http.StatusNotFound)
+			middleware.NotFoundError(w, "School not found", err)
 			return
 		}
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
@@ -202,7 +202,7 @@ func (h *SchoolHandler) VerifySchool(w http.ResponseWriter, r *http.Request) {
 		Status:   req.Status,
 	})
 	if err != nil {
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
@@ -226,13 +226,13 @@ func (h *SchoolHandler) GetSchoolSettings(w http.ResponseWriter, r *http.Request
 	schoolIDStr := chi.URLParam(r, "schoolId")
 	schoolID, err := uuid.Parse(schoolIDStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid school ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid school ID", err)
 		return
 	}
 
 	user, _ := middleware.GetUser(r.Context())
 	if user.SchoolID.UUID != schoolID && !isParentCompanyAdmin(user.RoleName) {
-		middleware.SendError(w, "Forbidden", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Forbidden", err)
 		return
 	}
 
@@ -247,10 +247,10 @@ func (h *SchoolHandler) GetSchoolSettings(w http.ResponseWriter, r *http.Request
 	settings, err := h.Queries.GetSchoolSettings(r.Context(), schoolID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			middleware.SendError(w, "Settings not found", http.StatusNotFound)
+			middleware.NotFoundError(w, "Settings not found", err)
 			return
 		}
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
@@ -265,13 +265,13 @@ func (h *SchoolHandler) UpdateSchoolSettings(w http.ResponseWriter, r *http.Requ
 	schoolIDStr := chi.URLParam(r, "schoolId")
 	schoolID, err := uuid.Parse(schoolIDStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid school ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid school ID", err)
 		return
 	}
 
 	user, _ := middleware.GetUser(r.Context())
 	if user.SchoolID.UUID != schoolID || !isExecutiveAdmin(user.RoleName) {
-		middleware.SendError(w, "Forbidden", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Forbidden", err)
 		return
 	}
 
@@ -285,7 +285,7 @@ func (h *SchoolHandler) UpdateSchoolSettings(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -301,7 +301,7 @@ func (h *SchoolHandler) UpdateSchoolSettings(w http.ResponseWriter, r *http.Requ
 
 	if err != nil {
 		slog.Error("Failed to update settings", "error", err)
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
@@ -326,3 +326,6 @@ func isParentCompanyAdmin(role string) bool {
 func isExecutiveAdmin(role string) bool {
 	return role == "Executive Administrator" || role == "School Bursar"
 }
+
+
+

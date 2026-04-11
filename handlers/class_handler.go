@@ -28,7 +28,7 @@ func (h *ClassHandler) GetClasses(w http.ResponseWriter, r *http.Request) {
 
 	classes, err := h.Queries.GetClassesBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch classes", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch classes", err)
 		return
 	}
 
@@ -50,7 +50,7 @@ func (h *ClassHandler) CreateClass(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -71,7 +71,7 @@ func (h *ClassHandler) CreateClass(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create class", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create class", err)
 		return
 	}
 
@@ -83,7 +83,7 @@ func (h *ClassHandler) AddStudentsToClass(w http.ResponseWriter, r *http.Request
 	classIDStr := chi.URLParam(r, "class_id")
 	classID, err := uuid.Parse(classIDStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid class ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid class ID", err)
 		return
 	}
 
@@ -91,7 +91,7 @@ func (h *ClassHandler) AddStudentsToClass(w http.ResponseWriter, r *http.Request
 		StudentIds []string `json:"student_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -99,14 +99,14 @@ func (h *ClassHandler) AddStudentsToClass(w http.ResponseWriter, r *http.Request
 	schoolID := userCtx.SchoolID.UUID
 
 	if !isAcademicAdmin(userCtx.RoleName) {
-		middleware.SendError(w, "Forbidden", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Forbidden", err)
 		return
 	}
 
 	// Start transaction
 	tx, err := h.DB.Begin()
 	if err != nil {
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 	defer tx.Rollback()
@@ -119,7 +119,7 @@ func (h *ClassHandler) AddStudentsToClass(w http.ResponseWriter, r *http.Request
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Class not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Class not found", err)
 		return
 	}
 
@@ -176,3 +176,6 @@ func (h *ClassHandler) AddStudentsToClass(w http.ResponseWriter, r *http.Request
 func isAcademicAdmin(role string) bool {
 	return role == "Teacher" || role == "Academic Administrator" || role == "Executive Administrator"
 }
+
+
+

@@ -36,18 +36,18 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	if req.Title == "" || req.EventDate == "" || req.EventType == "" {
-		middleware.SendError(w, "Title, event date, and event type are required", http.StatusBadRequest)
+		middleware.ValidationError(w, "Title, event date, and event type are required", nil)
 		return
 	}
 
 	eventDate, err := time.Parse(time.RFC3339, req.EventDate)
 	if err != nil {
-		middleware.SendError(w, "Invalid event date format", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid event date format", err)
 		return
 	}
 
@@ -55,7 +55,7 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	if req.EndDate != "" {
 		t, err := time.Parse(time.RFC3339, req.EndDate)
 		if err != nil {
-			middleware.SendError(w, "Invalid end date format", http.StatusBadRequest)
+			middleware.ValidationError(w, "Invalid end date format", err)
 			return
 		}
 		endDate = sql.NullTime{Time: t, Valid: true}
@@ -87,7 +87,7 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create event", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create event", err)
 		return
 	}
 
@@ -101,7 +101,7 @@ func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 
 	events, err := h.Queries.GetEventsBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch events", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch events", err)
 		return
 	}
 
@@ -112,7 +112,7 @@ func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	eventID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid event ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid event ID", err)
 		return
 	}
 
@@ -124,7 +124,7 @@ func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Event not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Event not found", err)
 		return
 	}
 
@@ -135,7 +135,7 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	eventID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid event ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid event ID", err)
 		return
 	}
 
@@ -154,7 +154,7 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -165,7 +165,7 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Event not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Event not found", err)
 		return
 	}
 
@@ -218,7 +218,7 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 
 	updatedEvent, err := h.Queries.UpdateEvent(r.Context(), params)
 	if err != nil {
-		middleware.SendError(w, "Could not update event", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update event", err)
 		return
 	}
 
@@ -229,7 +229,7 @@ func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	eventID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid event ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid event ID", err)
 		return
 	}
 
@@ -241,9 +241,12 @@ func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not delete event", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete event", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

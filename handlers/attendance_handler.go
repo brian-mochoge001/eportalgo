@@ -32,7 +32,7 @@ func (h *AttendanceHandler) GetAttendanceByClass(w http.ResponseWriter, r *http.
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch attendance", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch attendance", err)
 		return
 	}
 
@@ -51,7 +51,7 @@ func (h *AttendanceHandler) MarkAttendance(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -66,7 +66,7 @@ func (h *AttendanceHandler) MarkAttendance(w http.ResponseWriter, r *http.Reques
 		SchoolID: schoolID,
 	})
 	if err != nil || academicClass.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to mark attendance for this class", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to mark attendance for this class", err)
 		return
 	}
 
@@ -118,7 +118,7 @@ func (h *AttendanceHandler) GetStudentAttendance(w http.ResponseWriter, r *http.
 	schoolID := userCtx.SchoolID.UUID
 
 	if userCtx.RoleName == "Student" && userCtx.UserID != studentID {
-		middleware.SendError(w, "Forbidden", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Forbidden", nil)
 		return
 	}
 
@@ -127,9 +127,11 @@ func (h *AttendanceHandler) GetStudentAttendance(w http.ResponseWriter, r *http.
 		SchoolID:  schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch attendance", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch attendance", err)
 		return
 	}
 
 	json.NewEncoder(w).Encode(attendance)
 }
+
+

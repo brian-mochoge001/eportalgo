@@ -30,7 +30,7 @@ func (h *GradeHandler) GetGradesBySubmission(w http.ResponseWriter, r *http.Requ
 		SchoolID:     schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch grades", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch grades", err)
 		return
 	}
 
@@ -48,7 +48,7 @@ func (h *GradeHandler) CreateGrade(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -63,10 +63,13 @@ func (h *GradeHandler) CreateGrade(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create grade", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create grade", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(grade)
 }
+
+
+

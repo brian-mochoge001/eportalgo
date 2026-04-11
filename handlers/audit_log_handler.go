@@ -52,7 +52,7 @@ func (h *AuditLogHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) 
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not fetch audit logs", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch audit logs", err)
 		return
 	}
 
@@ -72,16 +72,16 @@ func (h *AuditLogHandler) GetAuditLog(w http.ResponseWriter, r *http.Request) {
 	auditLog, err := h.Queries.GetAuditLog(r.Context(), id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			middleware.SendError(w, "Audit log not found", http.StatusNotFound)
+			middleware.NotFoundError(w, "Audit log not found", err)
 			return
 		}
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
 	// Auth check
 	if !isParentCompanyAdmin(userCtx.RoleName) && auditLog.SchoolID.UUID != userCtx.SchoolID.UUID {
-		middleware.SendError(w, "Forbidden", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Forbidden", err)
 		return
 	}
 
@@ -90,3 +90,6 @@ func (h *AuditLogHandler) GetAuditLog(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]interface{}{"auditLog": auditLog},
 	})
 }
+
+
+

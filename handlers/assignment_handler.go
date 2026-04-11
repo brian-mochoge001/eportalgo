@@ -34,7 +34,7 @@ func (h *AssignmentHandler) GetAssignments(w http.ResponseWriter, r *http.Reques
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch assignments", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch assignments", err)
 		return
 	}
 
@@ -56,7 +56,7 @@ func (h *AssignmentHandler) CreateAssignment(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -69,7 +69,7 @@ func (h *AssignmentHandler) CreateAssignment(w http.ResponseWriter, r *http.Requ
 		SchoolID: schoolID,
 	})
 	if err != nil || academicClass.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to post assignments to this class", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to post assignments to this class", err)
 		return
 	}
 
@@ -86,7 +86,7 @@ func (h *AssignmentHandler) CreateAssignment(w http.ResponseWriter, r *http.Requ
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create assignment", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create assignment", err)
 		return
 	}
 
@@ -145,7 +145,7 @@ func (h *AssignmentHandler) UpdateAssignment(w http.ResponseWriter, r *http.Requ
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not update assignment", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update assignment", err)
 		return
 	}
 
@@ -166,9 +166,11 @@ func (h *AssignmentHandler) DeleteAssignment(w http.ResponseWriter, r *http.Requ
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not delete assignment", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete assignment", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+

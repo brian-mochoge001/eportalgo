@@ -30,7 +30,7 @@ func (h *FeedbackHandler) CreateFeedback(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -44,7 +44,7 @@ func (h *FeedbackHandler) CreateFeedback(w http.ResponseWriter, r *http.Request)
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create feedback", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create feedback", err)
 		return
 	}
 
@@ -70,7 +70,7 @@ func (h *FeedbackHandler) ListFeedbacks(w http.ResponseWriter, r *http.Request) 
 		IsSuperAdmin: isSuperAdmin,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch feedbacks", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch feedbacks", err)
 		return
 	}
 
@@ -85,7 +85,7 @@ func (h *FeedbackHandler) GetFeedbackByID(w http.ResponseWriter, r *http.Request
 
 	feedback, err := h.Queries.GetFeedbackByID(r.Context(), feedbackID)
 	if err != nil {
-		middleware.SendError(w, "Feedback not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Feedback not found", err)
 		return
 	}
 
@@ -98,7 +98,7 @@ func (h *FeedbackHandler) GetFeedbackByID(w http.ResponseWriter, r *http.Request
 	}
 
 	if !isSuperAdmin && feedback.UserID != userCtx.UserID && feedback.SchoolID.UUID != userCtx.SchoolID.UUID {
-		middleware.SendError(w, "Not authorized to view this feedback", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this feedback", err)
 		return
 	}
 
@@ -118,7 +118,7 @@ func (h *FeedbackHandler) UpdateFeedback(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -132,7 +132,7 @@ func (h *FeedbackHandler) UpdateFeedback(w http.ResponseWriter, r *http.Request)
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not update feedback", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update feedback", err)
 		return
 	}
 
@@ -145,9 +145,12 @@ func (h *FeedbackHandler) DeleteFeedback(w http.ResponseWriter, r *http.Request)
 
 	err := h.Queries.DeleteFeedback(r.Context(), feedbackID)
 	if err != nil {
-		middleware.SendError(w, "Could not delete feedback", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete feedback", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

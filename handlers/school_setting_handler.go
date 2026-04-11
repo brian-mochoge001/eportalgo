@@ -23,7 +23,7 @@ func (h *SchoolSettingHandler) GetSchoolSettings(w http.ResponseWriter, r *http.
 
 	settings, err := h.Queries.GetSchoolSettings(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch school settings", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch school settings", err)
 		return
 	}
 
@@ -44,7 +44,7 @@ func (h *SchoolSettingHandler) UpdateSchoolSettings(w http.ResponseWriter, r *ht
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -59,9 +59,12 @@ func (h *SchoolSettingHandler) UpdateSchoolSettings(w http.ResponseWriter, r *ht
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not update school settings", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update school settings", err)
 		return
 	}
 
 	json.NewEncoder(w).Encode(settings)
 }
+
+
+

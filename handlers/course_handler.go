@@ -25,7 +25,7 @@ func (h *CourseHandler) GetCourses(w http.ResponseWriter, r *http.Request) {
 
 	courses, err := h.Queries.GetCoursesBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch courses", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch courses", err)
 		return
 	}
 
@@ -46,7 +46,7 @@ func (h *CourseHandler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -61,7 +61,7 @@ func (h *CourseHandler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create course", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create course", err)
 		return
 	}
 
@@ -73,7 +73,7 @@ func (h *CourseHandler) EnrollShortCourse(w http.ResponseWriter, r *http.Request
 	courseIDStr := chi.URLParam(r, "course_id")
 	courseID, err := uuid.Parse(courseIDStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid course ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid course ID", err)
 		return
 	}
 
@@ -81,13 +81,13 @@ func (h *CourseHandler) EnrollShortCourse(w http.ResponseWriter, r *http.Request
 		StudentID string `json:"student_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	studentID, err := uuid.Parse(req.StudentID)
 	if err != nil {
-		middleware.SendError(w, "Invalid student ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid student ID", err)
 		return
 	}
 
@@ -100,13 +100,13 @@ func (h *CourseHandler) EnrollShortCourse(w http.ResponseWriter, r *http.Request
 		SchoolID: schoolID,
 	})
 	if err != nil || !course.IsShortCourse {
-		middleware.SendError(w, "Short course not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Short course not found", err)
 		return
 	}
 
 	// Auth check
 	if userCtx.RoleName == "Student" && userCtx.UserID != studentID {
-		middleware.SendError(w, "Students can only enroll themselves", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Students can only enroll themselves", err)
 		return
 	}
 
@@ -116,7 +116,7 @@ func (h *CourseHandler) EnrollShortCourse(w http.ResponseWriter, r *http.Request
 		CourseID:  courseID,
 	})
 	if err == nil {
-		middleware.SendError(w, "Student is already enrolled", http.StatusConflict)
+		middleware.SendError(w, "Student is already enrolled", http.StatusConflict, "FETCH_ERROR", err)
 		return
 	}
 
@@ -128,7 +128,7 @@ func (h *CourseHandler) EnrollShortCourse(w http.ResponseWriter, r *http.Request
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not enroll student", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not enroll student", err)
 		return
 	}
 
@@ -146,7 +146,7 @@ func (h *CourseHandler) UnenrollShortCourse(w http.ResponseWriter, r *http.Reque
 
 	// Auth check
 	if userCtx.RoleName == "Student" && userCtx.UserID != studentID {
-		middleware.SendError(w, "Students can only unenroll themselves", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Students can only unenroll themselves", nil)
 		return
 	}
 
@@ -157,10 +157,13 @@ func (h *CourseHandler) UnenrollShortCourse(w http.ResponseWriter, r *http.Reque
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not unenroll student", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not unenroll student", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Student unenrolled successfully"})
 }
+
+
+

@@ -25,7 +25,7 @@ func (h *ChatHandler) GetChatRooms(w http.ResponseWriter, r *http.Request) {
 
 	rooms, err := h.Queries.GetChatRoomsByUser(r.Context(), userCtx.UserID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch chat rooms", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch chat rooms", err)
 		return
 	}
 
@@ -38,7 +38,7 @@ func (h *ChatHandler) GetChatMessages(w http.ResponseWriter, r *http.Request) {
 
 	messages, err := h.Queries.GetChatMessagesByRoom(r.Context(), roomID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch messages", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch messages", err)
 		return
 	}
 
@@ -57,7 +57,7 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -74,7 +74,7 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !isMember {
-		middleware.SendError(w, "Not a member of this chat room", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not a member of this chat room", err)
 		return
 	}
 
@@ -92,7 +92,7 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !allowed && len(room.AllowedFileTypes) > 0 {
-			middleware.SendError(w, "File type not allowed", http.StatusBadRequest)
+			middleware.ValidationError(w, "File type not allowed", err)
 			return
 		}
 	}
@@ -107,7 +107,7 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not send message", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not send message", err)
 		return
 	}
 
@@ -119,3 +119,6 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 func isTeacherOrDeptHead(role string) bool {
 	return role == "Teacher" || role == "Department Head"
 }
+
+
+

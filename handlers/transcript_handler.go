@@ -30,7 +30,7 @@ func (h *TranscriptHandler) CreateTranscript(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -46,7 +46,7 @@ func (h *TranscriptHandler) CreateTranscript(w http.ResponseWriter, r *http.Requ
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create transcript", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create transcript", err)
 		return
 	}
 
@@ -73,7 +73,7 @@ func (h *TranscriptHandler) GetTranscripts(w http.ResponseWriter, r *http.Reques
 		StudentID: studentID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch transcripts", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch transcripts", err)
 		return
 	}
 
@@ -92,12 +92,12 @@ func (h *TranscriptHandler) GetTranscriptByID(w http.ResponseWriter, r *http.Req
 		SchoolID:     schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Transcript not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Transcript not found", err)
 		return
 	}
 
 	if userCtx.RoleName == "Student" && transcript.StudentID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to view this transcript", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this transcript", nil)
 		return
 	}
 
@@ -118,7 +118,7 @@ func (h *TranscriptHandler) UpdateTranscript(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -133,7 +133,7 @@ func (h *TranscriptHandler) UpdateTranscript(w http.ResponseWriter, r *http.Requ
 		SchoolID:     schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Transcript not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Transcript not found", err)
 		return
 	}
 
@@ -153,7 +153,7 @@ func (h *TranscriptHandler) UpdateTranscript(w http.ResponseWriter, r *http.Requ
 
 	updated, err := h.Queries.UpdateTranscript(r.Context(), params)
 	if err != nil {
-		middleware.SendError(w, "Could not update transcript", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update transcript", err)
 		return
 	}
 
@@ -172,9 +172,11 @@ func (h *TranscriptHandler) DeleteTranscript(w http.ResponseWriter, r *http.Requ
 		SchoolID:     schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not delete transcript", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete transcript", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+

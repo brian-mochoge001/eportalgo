@@ -38,3 +38,5 @@ func parseDate(s string) (sql.NullTime, error) {
 	}
 	return sql.NullTime{Time: t, Valid: true}, nil
 }
+
+

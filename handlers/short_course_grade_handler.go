@@ -29,7 +29,7 @@ func (h *ShortCourseGradeHandler) GradeShortCourse(w http.ResponseWriter, r *htt
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -38,12 +38,12 @@ func (h *ShortCourseGradeHandler) GradeShortCourse(w http.ResponseWriter, r *htt
 	// Fetch enrollment details to get course_id, student_id, and school_id for validation
 	enrollment, err := h.Queries.GetEnrollmentByID(r.Context(), enrollmentID)
 	if err != nil {
-		middleware.SendError(w, "Enrollment not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Enrollment not found", err)
 		return
 	}
 
 	if enrollment.SchoolID != schoolID {
-		middleware.SendError(w, "Enrollment does not belong to this school", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Enrollment does not belong to this school", err)
 		return
 	}
 
@@ -57,7 +57,7 @@ func (h *ShortCourseGradeHandler) GradeShortCourse(w http.ResponseWriter, r *htt
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not grade short course", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not grade short course", err)
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *ShortCourseGradeHandler) GetShortCourseGrades(w http.ResponseWriter, r 
 		StudentID: studentID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch short course grades", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch short course grades", err)
 		return
 	}
 
@@ -110,19 +110,22 @@ func (h *ShortCourseGradeHandler) GetShortCourseGradeByID(w http.ResponseWriter,
 
 	grade, err := h.Queries.GetShortCourseGradeByID(r.Context(), gradeID)
 	if err != nil {
-		middleware.SendError(w, "Short course grade not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Short course grade not found", err)
 		return
 	}
 
 	if grade.SchoolID != schoolID {
-		middleware.SendError(w, "Not authorized to view this grade", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this grade", err)
 		return
 	}
 
 	if userCtx.RoleName == "Student" && grade.StudentID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to view this grade", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this grade", err)
 		return
 	}
 
 	json.NewEncoder(w).Encode(grade)
 }
+
+
+

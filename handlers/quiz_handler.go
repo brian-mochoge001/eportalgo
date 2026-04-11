@@ -25,7 +25,7 @@ func (h *QuizHandler) GetQuizzes(w http.ResponseWriter, r *http.Request) {
 
 	quizzes, err := h.Queries.GetQuizzes(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch quizzes", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch quizzes", err)
 		return
 	}
 
@@ -44,7 +44,7 @@ func (h *QuizHandler) GetQuizByID(w http.ResponseWriter, r *http.Request) {
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Quiz not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Quiz not found", err)
 		return
 	}
 
@@ -76,7 +76,7 @@ func (h *QuizHandler) CreateQuiz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -84,19 +84,19 @@ func (h *QuizHandler) CreateQuiz(w http.ResponseWriter, r *http.Request) {
 	subjectID := toNullUUID(req.SubjectID)
 	startTime, err := parseDate(req.StartTime)
 	if err != nil {
-		middleware.SendError(w, "Invalid start time format. Please use YYYY-MM-DD or RFC3339 format.", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid start time format. Please use YYYY-MM-DD or RFC3339 format.", err)
 		return
 	}
 	endTime, err := parseDate(req.EndTime)
 	if err != nil {
-		middleware.SendError(w, "Invalid end time format. Please use YYYY-MM-DD or RFC3339 format.", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid end time format. Please use YYYY-MM-DD or RFC3339 format.", err)
 		return
 	}
 
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		middleware.SendError(w, "Could not start transaction", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not start transaction", err)
 		return
 	}
 	defer tx.Rollback()
@@ -117,7 +117,7 @@ func (h *QuizHandler) CreateQuiz(w http.ResponseWriter, r *http.Request) {
 		EndTime:         endTime,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not create quiz", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create quiz", err)
 		return
 	}
 
@@ -130,7 +130,7 @@ func (h *QuizHandler) CreateQuiz(w http.ResponseWriter, r *http.Request) {
 			Order:        qReq.Order,
 		})
 		if err != nil {
-			middleware.SendError(w, "Could not create question", http.StatusInternalServerError)
+			middleware.InternalError(w, "Could not create question", err)
 			return
 		}
 
@@ -142,7 +142,7 @@ func (h *QuizHandler) CreateQuiz(w http.ResponseWriter, r *http.Request) {
 					IsCorrect:  oReq.IsCorrect,
 				})
 				if err != nil {
-					middleware.SendError(w, "Could not create option", http.StatusInternalServerError)
+					middleware.InternalError(w, "Could not create option", err)
 					return
 				}
 			}
@@ -150,7 +150,7 @@ func (h *QuizHandler) CreateQuiz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tx.Commit(); err != nil {
-		middleware.SendError(w, "Could not commit transaction", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not commit transaction", err)
 		return
 	}
 
@@ -175,18 +175,18 @@ func (h *QuizHandler) UpdateQuiz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	startTime, err := parseDate(req.StartTime)
 	if err != nil {
-		middleware.SendError(w, "Invalid start time format. Please use YYYY-MM-DD or RFC3339 format.", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid start time format. Please use YYYY-MM-DD or RFC3339 format.", err)
 		return
 	}
 	endTime, err := parseDate(req.EndTime)
 	if err != nil {
-		middleware.SendError(w, "Invalid end time format. Please use YYYY-MM-DD or RFC3339 format.", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid end time format. Please use YYYY-MM-DD or RFC3339 format.", err)
 		return
 	}
 
@@ -203,7 +203,7 @@ func (h *QuizHandler) UpdateQuiz(w http.ResponseWriter, r *http.Request) {
 
 
 	if err != nil {
-		middleware.SendError(w, "Could not update quiz", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update quiz", err)
 		return
 	}
 
@@ -223,9 +223,12 @@ func (h *QuizHandler) DeleteQuiz(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not delete quiz", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete quiz", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

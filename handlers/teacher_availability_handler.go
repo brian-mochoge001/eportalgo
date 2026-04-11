@@ -32,23 +32,23 @@ func (h *TeacherAvailabilityHandler) CreateTeacherAvailability(w http.ResponseWr
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	if req.DayOfWeek < 0 || req.DayOfWeek > 6 {
-		middleware.SendError(w, "Day of week must be between 0 (Sunday) and 6 (Saturday)", http.StatusBadRequest)
+		middleware.ValidationError(w, "Day of week must be between 0 (Sunday) and 6 (Saturday)", nil)
 		return
 	}
 
 	startTime, err := time.Parse("15:04:05", req.StartTime)
 	if err != nil {
-		middleware.SendError(w, "Invalid start time format. Use HH:MM:SS", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid start time format. Use HH:MM:SS", err)
 		return
 	}
 	endTime, err := time.Parse("15:04:05", req.EndTime)
 	if err != nil {
-		middleware.SendError(w, "Invalid end time format. Use HH:MM:SS", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid end time format. Use HH:MM:SS", err)
 		return
 	}
 
@@ -62,7 +62,7 @@ func (h *TeacherAvailabilityHandler) CreateTeacherAvailability(w http.ResponseWr
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create teacher availability", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create teacher availability", err)
 		return
 	}
 
@@ -85,7 +85,7 @@ func (h *TeacherAvailabilityHandler) GetTeacherAvailabilities(w http.ResponseWri
 
 	availabilities, err := h.Queries.GetTeacherAvailabilities(r.Context(), teacherID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch teacher availabilities", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch teacher availabilities", err)
 		return
 	}
 
@@ -100,12 +100,12 @@ func (h *TeacherAvailabilityHandler) GetTeacherAvailabilityByID(w http.ResponseW
 
 	availability, err := h.Queries.GetTeacherAvailabilityByID(r.Context(), availabilityID)
 	if err != nil {
-		middleware.SendError(w, "Teacher availability not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Teacher availability not found", err)
 		return
 	}
 
 	if userCtx.RoleName == "Teacher" && availability.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to view this availability", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this availability", nil)
 		return
 	}
 
@@ -127,29 +127,29 @@ func (h *TeacherAvailabilityHandler) UpdateTeacherAvailability(w http.ResponseWr
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	existingAvailability, err := h.Queries.GetTeacherAvailabilityByID(r.Context(), availabilityID)
 	if err != nil {
-		middleware.SendError(w, "Teacher availability not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Teacher availability not found", err)
 		return
 	}
 
 	if userCtx.RoleName == "Teacher" && existingAvailability.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to update this availability", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to update this availability", nil)
 		return
 	}
 
 	startTime, err := time.Parse("15:04:05", req.StartTime)
 	if err != nil {
-		middleware.SendError(w, "Invalid start time format. Use HH:MM:SS", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid start time format. Use HH:MM:SS", err)
 		return
 	}
 	endTime, err := time.Parse("15:04:05", req.EndTime)
 	if err != nil {
-		middleware.SendError(w, "Invalid end time format. Use HH:MM:SS", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid end time format. Use HH:MM:SS", err)
 		return
 	}
 
@@ -163,7 +163,7 @@ func (h *TeacherAvailabilityHandler) UpdateTeacherAvailability(w http.ResponseWr
 		Notes:          toNullString(req.Notes),
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not update teacher availability", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update teacher availability", err)
 		return
 	}
 
@@ -178,12 +178,12 @@ func (h *TeacherAvailabilityHandler) DeleteTeacherAvailability(w http.ResponseWr
 
 	existingAvailability, err := h.Queries.GetTeacherAvailabilityByID(r.Context(), availabilityID)
 	if err != nil {
-		middleware.SendError(w, "Teacher availability not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Teacher availability not found", err)
 		return
 	}
 
 	if userCtx.RoleName == "Teacher" && existingAvailability.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to delete this availability", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to delete this availability", nil)
 		return
 	}
 
@@ -192,9 +192,11 @@ func (h *TeacherAvailabilityHandler) DeleteTeacherAvailability(w http.ResponseWr
 		TeacherID:      existingAvailability.TeacherID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not delete teacher availability", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete teacher availability", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+

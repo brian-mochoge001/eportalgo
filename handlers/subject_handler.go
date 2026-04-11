@@ -25,7 +25,7 @@ func (h *SubjectHandler) GetSubjects(w http.ResponseWriter, r *http.Request) {
 
 	subjects, err := h.Queries.GetSubjectsBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch subjects", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch subjects", err)
 		return
 	}
 
@@ -42,7 +42,7 @@ func (h *SubjectHandler) GetSubjectByID(w http.ResponseWriter, r *http.Request) 
 	idStr := chi.URLParam(r, "id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid subject ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid subject ID", err)
 		return
 	}
 
@@ -55,10 +55,10 @@ func (h *SubjectHandler) GetSubjectByID(w http.ResponseWriter, r *http.Request) 
 	})
 	if err != nil {
 		if err == sql.ErrNoRows {
-			middleware.SendError(w, "Subject not found", http.StatusNotFound)
+			middleware.NotFoundError(w, "Subject not found", err)
 			return
 		}
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
@@ -83,7 +83,7 @@ func (h *SubjectHandler) CreateSubject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -97,7 +97,7 @@ func (h *SubjectHandler) CreateSubject(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create subject", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create subject", err)
 		return
 	}
 
@@ -126,7 +126,7 @@ func (h *SubjectHandler) UpdateSubject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -141,7 +141,7 @@ func (h *SubjectHandler) UpdateSubject(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not update subject", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update subject", err)
 		return
 	}
 
@@ -166,9 +166,12 @@ func (h *SubjectHandler) DeleteSubject(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not delete subject", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete subject", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

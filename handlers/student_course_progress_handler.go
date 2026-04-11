@@ -25,7 +25,7 @@ func (h *StudentCourseProgressHandler) CreateStudentCourseProgress(w http.Respon
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -37,7 +37,7 @@ func (h *StudentCourseProgressHandler) CreateStudentCourseProgress(w http.Respon
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create student course progress", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create student course progress", err)
 		return
 	}
 
@@ -74,7 +74,7 @@ func (h *StudentCourseProgressHandler) GetStudentCourseProgresses(w http.Respons
 		StudentID:    studentID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch student course progresses", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch student course progresses", err)
 		return
 	}
 
@@ -90,17 +90,17 @@ func (h *StudentCourseProgressHandler) GetStudentCourseProgressByID(w http.Respo
 
 	progress, err := h.Queries.GetStudentCourseProgressByID(r.Context(), progressID)
 	if err != nil {
-		middleware.SendError(w, "Student course progress not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Student course progress not found", err)
 		return
 	}
 
 	if progress.SchoolID != schoolID {
-		middleware.SendError(w, "Not authorized to view this progress", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this progress", err)
 		return
 	}
 
 	if userCtx.RoleName == "Student" && progress.StudentID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to view this progress", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this progress", err)
 		return
 	}
 
@@ -119,18 +119,18 @@ func (h *StudentCourseProgressHandler) UpdateStudentCourseProgress(w http.Respon
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	existingProgress, err := h.Queries.GetStudentCourseProgressByID(r.Context(), progressID)
 	if err != nil {
-		middleware.SendError(w, "Student course progress not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Student course progress not found", err)
 		return
 	}
 
 	if existingProgress.SchoolID != schoolID {
-		middleware.SendError(w, "Not authorized to update this progress", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to update this progress", err)
 		return
 	}
 
@@ -139,7 +139,7 @@ func (h *StudentCourseProgressHandler) UpdateStudentCourseProgress(w http.Respon
 		ProgressPercentage: req.ProgressPercentage,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not update student course progress", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update student course progress", err)
 		return
 	}
 
@@ -155,20 +155,23 @@ func (h *StudentCourseProgressHandler) DeleteStudentCourseProgress(w http.Respon
 
 	existingProgress, err := h.Queries.GetStudentCourseProgressByID(r.Context(), progressID)
 	if err != nil {
-		middleware.SendError(w, "Student course progress not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Student course progress not found", err)
 		return
 	}
 
 	if existingProgress.SchoolID != schoolID {
-		middleware.SendError(w, "Not authorized to delete this progress", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to delete this progress", err)
 		return
 	}
 
 	err = h.Queries.DeleteStudentCourseProgress(r.Context(), progressID)
 	if err != nil {
-		middleware.SendError(w, "Could not delete student course progress", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete student course progress", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

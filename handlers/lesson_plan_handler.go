@@ -33,12 +33,12 @@ func (h *LessonPlanHandler) CreateLessonPlan(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	if req.Title == "" || req.Content == "" {
-		middleware.SendError(w, "Title and content are required", http.StatusBadRequest)
+		middleware.ValidationError(w, "Title and content are required", nil)
 		return
 	}
 
@@ -66,7 +66,7 @@ func (h *LessonPlanHandler) CreateLessonPlan(w http.ResponseWriter, r *http.Requ
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create lesson plan", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create lesson plan", err)
 		return
 	}
 
@@ -106,7 +106,7 @@ func (h *LessonPlanHandler) GetLessonPlans(w http.ResponseWriter, r *http.Reques
 		ClassID:   classID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch lesson plans", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch lesson plans", err)
 		return
 	}
 
@@ -117,7 +117,7 @@ func (h *LessonPlanHandler) GetLessonPlanByID(w http.ResponseWriter, r *http.Req
 	idStr := chi.URLParam(r, "id")
 	lessonPlanID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid lesson plan ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid lesson plan ID", err)
 		return
 	}
 
@@ -129,13 +129,13 @@ func (h *LessonPlanHandler) GetLessonPlanByID(w http.ResponseWriter, r *http.Req
 		SchoolID:     schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Lesson plan not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Lesson plan not found", err)
 		return
 	}
 
 	// Ensure teacher can only access their own lesson plans unless they are an admin
 	if userCtx.RoleName == "Teacher" && lessonPlan.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to view this lesson plan", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this lesson plan", err)
 		return
 	}
 
@@ -146,7 +146,7 @@ func (h *LessonPlanHandler) UpdateLessonPlan(w http.ResponseWriter, r *http.Requ
 	idStr := chi.URLParam(r, "id")
 	lessonPlanID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid lesson plan ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid lesson plan ID", err)
 		return
 	}
 
@@ -161,7 +161,7 @@ func (h *LessonPlanHandler) UpdateLessonPlan(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -170,13 +170,13 @@ func (h *LessonPlanHandler) UpdateLessonPlan(w http.ResponseWriter, r *http.Requ
 		SchoolID:     schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Lesson plan not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Lesson plan not found", err)
 		return
 	}
 
 	// Ensure teacher can only update their own lesson plans unless they are an admin
 	if userCtx.RoleName == "Teacher" && existingLessonPlan.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to update this lesson plan", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to update this lesson plan", err)
 		return
 	}
 
@@ -209,7 +209,7 @@ func (h *LessonPlanHandler) UpdateLessonPlan(w http.ResponseWriter, r *http.Requ
 
 	updatedLessonPlan, err := h.Queries.UpdateLessonPlan(r.Context(), params)
 	if err != nil {
-		middleware.SendError(w, "Could not update lesson plan", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update lesson plan", err)
 		return
 	}
 
@@ -220,7 +220,7 @@ func (h *LessonPlanHandler) DeleteLessonPlan(w http.ResponseWriter, r *http.Requ
 	idStr := chi.URLParam(r, "id")
 	lessonPlanID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid lesson plan ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid lesson plan ID", err)
 		return
 	}
 
@@ -232,13 +232,13 @@ func (h *LessonPlanHandler) DeleteLessonPlan(w http.ResponseWriter, r *http.Requ
 		SchoolID:     schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Lesson plan not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Lesson plan not found", err)
 		return
 	}
 
 	// Ensure teacher can only delete their own lesson plans unless they are an admin
 	if userCtx.RoleName == "Teacher" && existingLessonPlan.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to delete this lesson plan", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to delete this lesson plan", err)
 		return
 	}
 
@@ -248,9 +248,12 @@ func (h *LessonPlanHandler) DeleteLessonPlan(w http.ResponseWriter, r *http.Requ
 		TeacherID:    existingLessonPlan.TeacherID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not delete lesson plan", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete lesson plan", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

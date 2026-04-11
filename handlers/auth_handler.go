@@ -32,39 +32,39 @@ func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	// Check if user exists
 	existing, _ := h.Queries.GetUserByFirebaseUID(r.Context(), sql.NullString{String: req.FirebaseUID, Valid: true})
 	if existing.UserID != uuid.Nil {
-		middleware.SendError(w, "User already registered", http.StatusConflict)
+		middleware.SendError(w, "User already registered", http.StatusConflict, "CONFLICT", nil)
 		return
 	}
 
 	// Find role
 	role, err := h.Queries.GetRoleByName(r.Context(), req.RoleName)
 	if err != nil {
-		middleware.SendError(w, "Invalid role specified", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid role specified", err)
 		return
 	}
 
 	var assignedSchoolID uuid.NullUUID
 	if role.IsSchoolRole {
 		if req.SchoolID == "" {
-			middleware.SendError(w, "School ID is required for school roles", http.StatusBadRequest)
+			middleware.ValidationError(w, "School ID is required for school roles", err)
 			return
 		}
 		sid, err := uuid.Parse(req.SchoolID)
 		if err != nil {
-			middleware.SendError(w, "Invalid school ID format", http.StatusBadRequest)
+			middleware.ValidationError(w, "Invalid school ID format", err)
 			return
 		}
 		// Verify school exists
 		_, err = h.Queries.GetSchool(r.Context(), sid)
 		if err != nil {
-			middleware.SendError(w, "School not found", http.StatusBadRequest)
+			middleware.ValidationError(w, "School not found", err)
 			return
 		}
 		assignedSchoolID = uuid.NullUUID{UUID: sid, Valid: true}
@@ -82,7 +82,7 @@ func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("Failed to register user", "error", err)
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
@@ -113,23 +113,23 @@ func (h *AuthHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 		IDToken string `json:"idToken"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	token, err := h.FirebaseAuth.VerifyIDToken(r.Context(), req.IDToken)
 	if err != nil {
-		middleware.SendError(w, "Authentication failed", http.StatusUnauthorized)
+		middleware.UnauthorizedError(w, "Authentication failed", err)
 		return
 	}
 
 	userRow, err := h.Queries.GetUserByFirebaseUID(r.Context(), sql.NullString{String: token.UID, Valid: true})
 	if err != nil {
 		if err == sql.ErrNoRows {
-			middleware.SendError(w, "User not found in database", http.StatusNotFound)
+			middleware.NotFoundError(w, "User not found in database", err)
 			return
 		}
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
@@ -146,3 +146,6 @@ func (h *AuthHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 }
+
+
+

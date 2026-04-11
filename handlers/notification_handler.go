@@ -32,7 +32,7 @@ func (h *NotificationHandler) CreateNotification(w http.ResponseWriter, r *http.
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -50,7 +50,7 @@ func (h *NotificationHandler) CreateNotification(w http.ResponseWriter, r *http.
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create notification", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create notification", err)
 		return
 	}
 
@@ -60,7 +60,7 @@ func (h *NotificationHandler) CreateNotification(w http.ResponseWriter, r *http.
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create notification recipient", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create notification recipient", err)
 		return
 	}
 
@@ -74,7 +74,7 @@ func (h *NotificationHandler) GetNotifications(w http.ResponseWriter, r *http.Re
 
 	notifications, err := h.Queries.GetNotificationsByRecipient(r.Context(), recipientID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch notifications", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch notifications", err)
 		return
 	}
 
@@ -92,9 +92,12 @@ func (h *NotificationHandler) MarkAsRead(w http.ResponseWriter, r *http.Request)
 		RecipientID:    userCtx.UserID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not mark notification as read", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not mark notification as read", err)
 		return
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{"message": "Notification marked as read"})
 }
+
+
+

@@ -33,7 +33,7 @@ func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -41,7 +41,7 @@ func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		middleware.SendError(w, "Could not start transaction", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not start transaction", err)
 		return
 	}
 	defer tx.Rollback()
@@ -60,7 +60,7 @@ func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		ReceiptNumber:     toNullString(req.ReceiptNumber),
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not create payment", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create payment", err)
 		return
 	}
 
@@ -70,12 +70,12 @@ func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 		Column2:    req.Amount,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not update fee balance", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update fee balance", err)
 		return
 	}
 
 	if err := tx.Commit(); err != nil {
-		middleware.SendError(w, "Could not commit transaction", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not commit transaction", err)
 		return
 	}
 
@@ -89,9 +89,12 @@ func (h *PaymentHandler) GetPayments(w http.ResponseWriter, r *http.Request) {
 
 	payments, err := h.Queries.ListPayments(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch payments", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch payments", err)
 		return
 	}
 
 	json.NewEncoder(w).Encode(payments)
 }
+
+
+

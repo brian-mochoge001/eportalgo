@@ -21,7 +21,7 @@ func (h *TimetableHandler) GetTimetables(w http.ResponseWriter, r *http.Request)
 
 	timetables, err := h.Queries.GetTimetables(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch timetables", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch timetables", err)
 		return
 	}
 
@@ -41,7 +41,7 @@ func (h *TimetableHandler) CreateTimetable(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -55,10 +55,12 @@ func (h *TimetableHandler) CreateTimetable(w http.ResponseWriter, r *http.Reques
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create timetable", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create timetable", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(timetable)
 }
+
+

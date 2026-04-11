@@ -32,7 +32,7 @@ func (h *TransferRequestHandler) CreateTransferRequest(w http.ResponseWriter, r 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -50,7 +50,7 @@ func (h *TransferRequestHandler) CreateTransferRequest(w http.ResponseWriter, r 
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create transfer request", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create transfer request", err)
 		return
 	}
 
@@ -108,7 +108,7 @@ func (h *TransferRequestHandler) GetTransferRequests(w http.ResponseWriter, r *h
 		SchoolID:            uuid.NullUUID{UUID: schoolID, Valid: !isSuperAdmin}, // Use user's school if not super admin
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch transfer requests", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch transfer requests", err)
 		return
 	}
 
@@ -123,7 +123,7 @@ func (h *TransferRequestHandler) GetTransferRequestByID(w http.ResponseWriter, r
 
 	transferRequest, err := h.Queries.GetTransferRequestByID(r.Context(), transferID)
 	if err != nil {
-		middleware.SendError(w, "Transfer request not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Transfer request not found", err)
 		return
 	}
 
@@ -136,7 +136,7 @@ func (h *TransferRequestHandler) GetTransferRequestByID(w http.ResponseWriter, r
 		}
 	}
 	if !isSuperAdmin && transferRequest.SourceSchoolID != userCtx.SchoolID.UUID && transferRequest.DestinationSchoolID != userCtx.SchoolID.UUID {
-		middleware.SendError(w, "Not authorized to view this transfer request", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this transfer request", nil)
 		return
 	}
 
@@ -153,7 +153,7 @@ func (h *TransferRequestHandler) UpdateTransferRequest(w http.ResponseWriter, r 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -164,7 +164,7 @@ func (h *TransferRequestHandler) UpdateTransferRequest(w http.ResponseWriter, r 
 		Notes:          toNullString(req.Notes),
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not update transfer request", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update transfer request", err)
 		return
 	}
 
@@ -183,9 +183,11 @@ func (h *TransferRequestHandler) DeleteTransferRequest(w http.ResponseWriter, r 
 		SourceSchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not delete transfer request", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete transfer request", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+

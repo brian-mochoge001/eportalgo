@@ -37,18 +37,18 @@ func (h *MeetingHandler) CreateMeeting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	if req.Title == "" || req.MeetingDate == "" || req.MeetingType == "" {
-		middleware.SendError(w, "Title, meeting date, and meeting type are required", http.StatusBadRequest)
+		middleware.ValidationError(w, "Title, meeting date, and meeting type are required", nil)
 		return
 	}
 
 	meetingDate, err := time.Parse(time.RFC3339, req.MeetingDate)
 	if err != nil {
-		middleware.SendError(w, "Invalid meeting date format", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid meeting date format", err)
 		return
 	}
 
@@ -78,7 +78,7 @@ func (h *MeetingHandler) CreateMeeting(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create meeting", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create meeting", err)
 		return
 	}
 
@@ -103,7 +103,7 @@ func (h *MeetingHandler) GetMeetings(w http.ResponseWriter, r *http.Request) {
 
 	meetings, err := h.Queries.GetMeetingsBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch meetings", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch meetings", err)
 		return
 	}
 
@@ -114,7 +114,7 @@ func (h *MeetingHandler) GetMeetingByID(w http.ResponseWriter, r *http.Request) 
 	idStr := chi.URLParam(r, "id")
 	meetingID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid meeting ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid meeting ID", err)
 		return
 	}
 
@@ -126,7 +126,7 @@ func (h *MeetingHandler) GetMeetingByID(w http.ResponseWriter, r *http.Request) 
 		SchoolID:  schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Meeting not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Meeting not found", err)
 		return
 	}
 
@@ -147,7 +147,7 @@ func (h *MeetingHandler) UpdateMeeting(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	meetingID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid meeting ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid meeting ID", err)
 		return
 	}
 
@@ -165,7 +165,7 @@ func (h *MeetingHandler) UpdateMeeting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -174,7 +174,7 @@ func (h *MeetingHandler) UpdateMeeting(w http.ResponseWriter, r *http.Request) {
 		SchoolID:  schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Meeting not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Meeting not found", err)
 		return
 	}
 
@@ -220,7 +220,7 @@ func (h *MeetingHandler) UpdateMeeting(w http.ResponseWriter, r *http.Request) {
 
 	updatedMeeting, err := h.Queries.UpdateMeeting(r.Context(), params)
 	if err != nil {
-		middleware.SendError(w, "Could not update meeting", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update meeting", err)
 		return
 	}
 
@@ -231,7 +231,7 @@ func (h *MeetingHandler) DeleteMeeting(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	meetingID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid meeting ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid meeting ID", err)
 		return
 	}
 
@@ -243,7 +243,7 @@ func (h *MeetingHandler) DeleteMeeting(w http.ResponseWriter, r *http.Request) {
 		SchoolID:  schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not delete meeting", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete meeting", err)
 		return
 	}
 
@@ -254,7 +254,7 @@ func (h *MeetingHandler) AddMeetingAttendees(w http.ResponseWriter, r *http.Requ
 	idStr := chi.URLParam(r, "id")
 	meetingID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid meeting ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid meeting ID", err)
 		return
 	}
 
@@ -262,7 +262,7 @@ func (h *MeetingHandler) AddMeetingAttendees(w http.ResponseWriter, r *http.Requ
 		UserIDs []string `json:"user_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -287,7 +287,7 @@ func (h *MeetingHandler) RemoveMeetingAttendees(w http.ResponseWriter, r *http.R
 	idStr := chi.URLParam(r, "id")
 	meetingID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid meeting ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid meeting ID", err)
 		return
 	}
 
@@ -295,7 +295,7 @@ func (h *MeetingHandler) RemoveMeetingAttendees(w http.ResponseWriter, r *http.R
 		UserIDs []string `json:"user_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -315,3 +315,6 @@ func (h *MeetingHandler) RemoveMeetingAttendees(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Attendees removed successfully"})
 }
+
+
+

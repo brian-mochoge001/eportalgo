@@ -26,7 +26,7 @@ func (h *BillingContactHandler) GetBillingContacts(w http.ResponseWriter, r *htt
 
 	contacts, err := h.Queries.GetBillingContactsBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch billing contacts", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch billing contacts", err)
 		return
 	}
 
@@ -50,10 +50,10 @@ func (h *BillingContactHandler) GetBillingContactByID(w http.ResponseWriter, r *
 	})
 	if err != nil {
 		if err == sql.ErrNoRows {
-			middleware.SendError(w, "Billing contact not found", http.StatusNotFound)
+			middleware.NotFoundError(w, "Billing contact not found", err)
 			return
 		}
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
@@ -76,7 +76,7 @@ func (h *BillingContactHandler) CreateBillingContact(w http.ResponseWriter, r *h
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -101,7 +101,7 @@ func (h *BillingContactHandler) CreateBillingContact(w http.ResponseWriter, r *h
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create billing contact", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create billing contact", err)
 		return
 	}
 
@@ -152,7 +152,7 @@ func (h *BillingContactHandler) UpdateBillingContact(w http.ResponseWriter, r *h
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not update billing contact", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update billing contact", err)
 		return
 	}
 
@@ -177,9 +177,12 @@ func (h *BillingContactHandler) DeleteBillingContact(w http.ResponseWriter, r *h
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not delete billing contact", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete billing contact", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

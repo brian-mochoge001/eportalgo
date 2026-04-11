@@ -37,18 +37,18 @@ func (h *UserHandler) AddUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	if req.Email == "" || req.FirstName == "" || req.LastName == "" || req.RoleName == "" || req.Password == "" {
-		middleware.SendError(w, "Please provide email, first name, last name, role name, and password.", http.StatusBadRequest)
+		middleware.ValidationError(w, "Please provide email, first name, last name, role name, and password.", nil)
 		return
 	}
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		middleware.SendError(w, "Could not start transaction", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not start transaction", err)
 		return
 	}
 	defer tx.Rollback()
@@ -57,13 +57,13 @@ func (h *UserHandler) AddUser(w http.ResponseWriter, r *http.Request) {
 	// Find the role_id based on roleName
 	role, err := qtx.GetRoleByName(r.Context(), req.RoleName)
 	if err != nil {
-		middleware.SendError(w, "Invalid role specified: "+req.RoleName, http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid role specified: "+req.RoleName, err)
 		return
 	}
 
 	// Ensure the role is a school-specific role
 	if !role.IsSchoolRole {
-		middleware.SendError(w, "Cannot add parent company role ("+req.RoleName+") via this endpoint.", http.StatusBadRequest)
+		middleware.ValidationError(w, "Cannot add parent company role ("+req.RoleName+") via this endpoint.", nil)
 		return
 	}
 
@@ -73,7 +73,7 @@ func (h *UserHandler) AddUser(w http.ResponseWriter, r *http.Request) {
 		SchoolID: uuid.NullUUID{UUID: schoolID, Valid: true},
 	})
 	if err == nil && existingUser.UserID != uuid.Nil {
-		middleware.SendError(w, "User with this email already exists in the database.", http.StatusConflict)
+		middleware.SendError(w, "User with this email already exists in the database.", http.StatusConflict, "USER_EXISTS", nil)
 		return
 	}
 
@@ -81,7 +81,7 @@ func (h *UserHandler) AddUser(w http.ResponseWriter, r *http.Request) {
 	authClient, _ := h.FirebaseApp.Auth(r.Context())
 	firebaseUser, err := authClient.GetUserByEmail(r.Context(), req.Email)
 	if err == nil && firebaseUser != nil {
-		middleware.SendError(w, "Email already in use in Firebase Authentication.", http.StatusConflict)
+		middleware.SendError(w, "Email already in use in Firebase Authentication.", http.StatusConflict, "EMAIL_EXISTS", nil)
 		return
 	}
 
@@ -89,7 +89,7 @@ func (h *UserHandler) AddUser(w http.ResponseWriter, r *http.Request) {
 	userParams := (&auth.UserToCreate{}).Email(req.Email).Password(req.Password).DisplayName(req.FirstName + " " + req.LastName)
 	userRecord, err := authClient.CreateUser(r.Context(), userParams)
 	if err != nil {
-		middleware.SendError(w, "Failed to create user in Firebase: "+err.Error(), http.StatusInternalServerError)
+		middleware.InternalError(w, "Failed to create user in Firebase: "+err.Error(), err)
 		return
 	}
 	firebaseUID := userRecord.UID
@@ -105,7 +105,7 @@ func (h *UserHandler) AddUser(w http.ResponseWriter, r *http.Request) {
 		IsActive:  true,
 	})
 	if err != nil {
-		middleware.SendError(w, "Failed to create user in database", http.StatusInternalServerError)
+		middleware.InternalError(w, "Failed to create user in database", err)
 		return
 	}
 
@@ -116,12 +116,12 @@ func (h *UserHandler) AddUser(w http.ResponseWriter, r *http.Request) {
 		"schoolStatus": "pending", // Default status
 	}
 	if err := authClient.SetCustomUserClaims(r.Context(), firebaseUID, claims); err != nil {
-		middleware.SendError(w, "Failed to set custom claims in Firebase", http.StatusInternalServerError)
+		middleware.InternalError(w, "Failed to set custom claims in Firebase", err)
 		return
 	}
 
 	if err := tx.Commit(); err != nil {
-		middleware.SendError(w, "Could not commit transaction", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not commit transaction", err)
 		return
 	}
 
@@ -145,7 +145,7 @@ func (h *UserHandler) GetUsersBySchool(w http.ResponseWriter, r *http.Request) {
 	schoolIDStr := chi.URLParam(r, "schoolId")
 	schoolID, err := uuid.Parse(schoolIDStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid school ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid school ID", err)
 		return
 	}
 
@@ -160,13 +160,13 @@ func (h *UserHandler) GetUsersBySchool(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !isSuperAdmin && userCtx.SchoolID.UUID != schoolID {
-		middleware.SendError(w, "Not authorized to view users for this school", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view users for this school", nil)
 		return
 	}
 
 	users, err := h.Queries.ListUsersBySchool(r.Context(), uuid.NullUUID{UUID: schoolID, Valid: true})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch users", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch users", err)
 		return
 	}
 
@@ -203,7 +203,7 @@ func (h *UserHandler) AddStudentProfile(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -216,14 +216,14 @@ func (h *UserHandler) AddStudentProfile(w http.ResponseWriter, r *http.Request) 
 		SchoolID: uuid.NullUUID{UUID: schoolID, Valid: true},
 	})
 	if err != nil {
-		middleware.SendError(w, "User not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "User not found", err)
 		return
 	}
 
 	// Ensure the user has the 'Student' role
 	studentRole, err := h.Queries.GetRoleByName(r.Context(), "Student")
 	if err != nil || user.RoleID != studentRole.RoleID {
-		middleware.SendError(w, "User must have the Student role", http.StatusBadRequest)
+		middleware.ValidationError(w, "User must have the Student role", err)
 		return
 	}
 
@@ -232,7 +232,7 @@ func (h *UserHandler) AddStudentProfile(w http.ResponseWriter, r *http.Request) 
 		UserID:   userID,
 		SchoolID: schoolID,
 	}); err == nil {
-		middleware.SendError(w, "Student profile already exists for this user", http.StatusConflict)
+		middleware.SendError(w, "Student profile already exists for this user", http.StatusConflict, "PROFILE_EXISTS", nil)
 		return
 	}
 
@@ -245,7 +245,7 @@ func (h *UserHandler) AddStudentProfile(w http.ResponseWriter, r *http.Request) 
 		CurrentClassID:   currentClassID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Failed to create student profile", http.StatusInternalServerError)
+		middleware.InternalError(w, "Failed to create student profile", err)
 		return
 	}
 
@@ -268,7 +268,7 @@ func (h *UserHandler) AddParentProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -278,14 +278,14 @@ func (h *UserHandler) AddParentProfile(w http.ResponseWriter, r *http.Request) {
 		SchoolID: uuid.NullUUID{UUID: schoolID, Valid: true},
 	})
 	if err != nil {
-		middleware.SendError(w, "User not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "User not found", err)
 		return
 	}
 
 	// Ensure the user has the 'Parent' role
 	parentRole, err := h.Queries.GetRoleByName(r.Context(), "Parent")
 	if err != nil || user.RoleID != parentRole.RoleID {
-		middleware.SendError(w, "User must have the Parent role", http.StatusBadRequest)
+		middleware.ValidationError(w, "User must have the Parent role", err)
 		return
 	}
 
@@ -294,7 +294,7 @@ func (h *UserHandler) AddParentProfile(w http.ResponseWriter, r *http.Request) {
 		UserID:   userID,
 		SchoolID: schoolID,
 	}); err == nil {
-		middleware.SendError(w, "Parent profile already exists for this user", http.StatusConflict)
+		middleware.SendError(w, "Parent profile already exists for this user", http.StatusConflict, "PROFILE_EXISTS", nil)
 		return
 	}
 
@@ -307,10 +307,12 @@ func (h *UserHandler) AddParentProfile(w http.ResponseWriter, r *http.Request) {
 		EmergencyContactPhone: toNullString(req.EmergencyContactPhone),
 	})
 	if err != nil {
-		middleware.SendError(w, "Failed to create parent profile", http.StatusInternalServerError)
+		middleware.InternalError(w, "Failed to create parent profile", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(parentProfile)
 }
+
+

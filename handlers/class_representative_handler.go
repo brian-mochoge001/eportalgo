@@ -38,7 +38,7 @@ func (h *ClassRepresentativeHandler) GetClassRepresentatives(w http.ResponseWrit
 		AcademicClassID: academicClassID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch class representatives", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch class representatives", err)
 		return
 	}
 
@@ -59,15 +59,15 @@ func (h *ClassRepresentativeHandler) GetClassRepresentativeByID(w http.ResponseW
 	rep, err := h.Queries.GetClassRepresentativeByID(r.Context(), id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			middleware.SendError(w, "Class representative not found", http.StatusNotFound)
+			middleware.NotFoundError(w, "Class representative not found", err)
 			return
 		}
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
 	if rep.SchoolID != schoolID {
-		middleware.SendError(w, "Forbidden", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Forbidden", err)
 		return
 	}
 
@@ -89,7 +89,7 @@ func (h *ClassRepresentativeHandler) CreateClassRepresentative(w http.ResponseWr
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -106,7 +106,7 @@ func (h *ClassRepresentativeHandler) CreateClassRepresentative(w http.ResponseWr
 		SchoolID: uuid.NullUUID{UUID: schoolID, Valid: true},
 	})
 	if err != nil || student.SchoolID.UUID != schoolID {
-		middleware.SendError(w, "Student not found in your school", http.StatusNotFound)
+		middleware.NotFoundError(w, "Student not found in your school", err)
 		return
 	}
 
@@ -116,12 +116,12 @@ func (h *ClassRepresentativeHandler) CreateClassRepresentative(w http.ResponseWr
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Class not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Class not found", err)
 		return
 	}
 
 	if classDetails.TeacherUserID.UUID != userCtx.UserID {
-		middleware.SendError(w, "Only the assigned teacher can appoint a representative", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Only the assigned teacher can appoint a representative", err)
 		return
 	}
 
@@ -133,7 +133,7 @@ func (h *ClassRepresentativeHandler) CreateClassRepresentative(w http.ResponseWr
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create representative", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create representative", err)
 		return
 	}
 
@@ -190,7 +190,7 @@ func (h *ClassRepresentativeHandler) UpdateClassRepresentative(w http.ResponseWr
 
 	rep, err := h.Queries.GetClassRepresentativeByID(r.Context(), id)
 	if err != nil || rep.SchoolID != schoolID {
-		middleware.SendError(w, "Representative not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Representative not found", err)
 		return
 	}
 
@@ -201,7 +201,7 @@ func (h *ClassRepresentativeHandler) UpdateClassRepresentative(w http.ResponseWr
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not update representative", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update representative", err)
 		return
 	}
 
@@ -220,7 +220,7 @@ func (h *ClassRepresentativeHandler) DeleteClassRepresentative(w http.ResponseWr
 
 	rep, err := h.Queries.GetClassRepresentativeByID(r.Context(), id)
 	if err != nil || rep.SchoolID != schoolID {
-		middleware.SendError(w, "Representative not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Representative not found", err)
 		return
 	}
 
@@ -235,3 +235,6 @@ func (h *ClassRepresentativeHandler) DeleteClassRepresentative(w http.ResponseWr
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

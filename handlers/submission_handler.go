@@ -31,12 +31,12 @@ func (h *SubmissionHandler) CreateSubmission(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	if req.AssignmentID == "" {
-		middleware.SendError(w, "Assignment ID is required", http.StatusBadRequest)
+		middleware.ValidationError(w, "Assignment ID is required", nil)
 		return
 	}
 
@@ -44,7 +44,7 @@ func (h *SubmissionHandler) CreateSubmission(w http.ResponseWriter, r *http.Requ
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 	defer tx.Rollback()
@@ -56,7 +56,7 @@ func (h *SubmissionHandler) CreateSubmission(w http.ResponseWriter, r *http.Requ
 		SchoolID:     schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Assignment not found or does not belong to your school", http.StatusNotFound)
+		middleware.NotFoundError(w, "Assignment not found or does not belong to your school", err)
 		return
 	}
 
@@ -66,7 +66,7 @@ func (h *SubmissionHandler) CreateSubmission(w http.ResponseWriter, r *http.Requ
 		ClassID:   assignment.ClassID,
 	})
 	if err != nil {
-		middleware.SendError(w, "You are not enrolled in the class for this assignment", http.StatusForbidden)
+		middleware.ForbiddenError(w, "You are not enrolled in the class for this assignment", err)
 		return
 	}
 
@@ -76,7 +76,7 @@ func (h *SubmissionHandler) CreateSubmission(w http.ResponseWriter, r *http.Requ
 		AssignmentID: assignmentID,
 	})
 	if err == nil && existingSubmission.SubmissionID != uuid.Nil { // If found
-		middleware.SendError(w, "You have already submitted for this assignment. Please update your existing submission.", http.StatusConflict)
+		middleware.SendError(w, "You have already submitted for this assignment. Please update your existing submission.", http.StatusConflict, "ALREADY_EXISTS", nil)
 		return
 	}
 
@@ -88,12 +88,12 @@ func (h *SubmissionHandler) CreateSubmission(w http.ResponseWriter, r *http.Requ
 		Status:            "Submitted",
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not submit assignment", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not submit assignment", err)
 		return
 	}
 
 	if err := tx.Commit(); err != nil {
-		middleware.SendError(w, "Could not commit transaction", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not commit transaction", err)
 		return
 	}
 
@@ -130,7 +130,7 @@ func (h *SubmissionHandler) GetSubmissions(w http.ResponseWriter, r *http.Reques
 		StudentID:    studentID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch submissions", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch submissions", err)
 		return
 	}
 
@@ -149,14 +149,14 @@ func (h *SubmissionHandler) GetSubmissionByID(w http.ResponseWriter, r *http.Req
 		SchoolID:     schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Submission not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Submission not found", err)
 		return
 	}
 
 	// Authorization check
 	isTeacherOrAdmin := strings.Contains(userCtx.RoleName, "Teacher") || middleware.IsAdmin(userCtx.RoleName)
 	if !isTeacherOrAdmin && submission.StudentID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to view this submission", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this submission", err)
 		return
 	}
 
@@ -175,7 +175,7 @@ func (h *SubmissionHandler) UpdateSubmissionStatus(w http.ResponseWriter, r *htt
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -184,14 +184,14 @@ func (h *SubmissionHandler) UpdateSubmissionStatus(w http.ResponseWriter, r *htt
 		SchoolID:     schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Submission not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Submission not found", err)
 		return
 	}
 
 	// Verify teacher is authorized to update this submission
 	isTeacherOrAdmin := strings.Contains(userCtx.RoleName, "Teacher") || middleware.IsAdmin(userCtx.RoleName)
 	if !isTeacherOrAdmin || submission.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to update this submission", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to update this submission", err)
 		return
 	}
 
@@ -201,9 +201,11 @@ func (h *SubmissionHandler) UpdateSubmissionStatus(w http.ResponseWriter, r *htt
 		SchoolID:     schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not update submission status", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update submission status", err)
 		return
 	}
 
 	json.NewEncoder(w).Encode(updatedSubmission)
 }
+
+

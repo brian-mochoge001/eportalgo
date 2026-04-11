@@ -25,7 +25,7 @@ func (h *BadgeHandler) GetBadges(w http.ResponseWriter, r *http.Request) {
 
 	badges, err := h.Queries.GetBadgesBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch badges", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch badges", err)
 		return
 	}
 
@@ -49,10 +49,10 @@ func (h *BadgeHandler) GetBadgeByID(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if err == sql.ErrNoRows {
-			middleware.SendError(w, "Badge not found", http.StatusNotFound)
+			middleware.NotFoundError(w, "Badge not found", err)
 			return
 		}
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 
@@ -74,7 +74,7 @@ func (h *BadgeHandler) CreateBadge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -87,7 +87,7 @@ func (h *BadgeHandler) CreateBadge(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create badge", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create badge", err)
 		return
 	}
 
@@ -123,7 +123,7 @@ func (h *BadgeHandler) UpdateBadge(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not update badge", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update badge", err)
 		return
 	}
 
@@ -146,7 +146,7 @@ func (h *BadgeHandler) DeleteBadge(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not delete badge", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete badge", err)
 		return
 	}
 
@@ -173,7 +173,7 @@ func (h *BadgeHandler) AwardBadge(w http.ResponseWriter, r *http.Request) {
 		SchoolID: uuid.NullUUID{UUID: schoolID, Valid: true},
 	})
 	if err != nil || student.UserID == uuid.Nil { // Check if user exists and belongs to the school
-		middleware.SendError(w, "Student not found in your school", http.StatusNotFound)
+		middleware.NotFoundError(w, "Student not found in your school", err)
 		return
 	}
 
@@ -186,7 +186,7 @@ func (h *BadgeHandler) AwardBadge(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not award badge", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not award badge", err)
 		return
 	}
 
@@ -214,10 +214,13 @@ func (h *BadgeHandler) RevokeBadge(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not revoke badge", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not revoke badge", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Badge revoked successfully"})
 }
+
+
+

@@ -24,16 +24,16 @@ func (h *TeacherHandler) GetTeachers(w http.ResponseWriter, r *http.Request) {
 
 	teachers, err := h.Queries.GetTeachersBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch teachers", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch teachers", err)
 		return
 	}
 
 	json.NewEncoder(w).Encode(teachers)
-}
+	}
 
-func (h *TeacherHandler) GetTeacherByID(w http.ResponseWriter, r *http.Request) {
-	idStr := chi.URLParam(r, "id")
-	teacherID, _ := uuid.Parse(idStr)
+	func (h *TeacherHandler) GetTeacherByID(w http.ResponseWriter, r *http.Request) {
+	teacherIDStr := chi.URLParam(r, "id")
+	teacherID, _ := uuid.Parse(teacherIDStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
@@ -43,9 +43,11 @@ func (h *TeacherHandler) GetTeacherByID(w http.ResponseWriter, r *http.Request) 
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Teacher not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Teacher not found", err)
 		return
 	}
 
 	json.NewEncoder(w).Encode(teacher)
 }
+
+

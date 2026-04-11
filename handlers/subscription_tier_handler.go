@@ -21,7 +21,7 @@ func NewSubscriptionTierHandler(q *db.Queries) *SubscriptionTierHandler {
 func (h *SubscriptionTierHandler) GetSubscriptionTiers(w http.ResponseWriter, r *http.Request) {
 	tiers, err := h.Queries.GetSubscriptionTiers(r.Context())
 	if err != nil {
-		middleware.SendError(w, "Could not fetch subscription tiers", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch subscription tiers", err)
 		return
 	}
 
@@ -34,9 +34,11 @@ func (h *SubscriptionTierHandler) GetSubscriptionTierByID(w http.ResponseWriter,
 
 	tier, err := h.Queries.GetSubscriptionTierByID(r.Context(), tierID)
 	if err != nil {
-		middleware.SendError(w, "Subscription tier not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Subscription tier not found", err)
 		return
 	}
 
 	json.NewEncoder(w).Encode(tier)
 }
+
+

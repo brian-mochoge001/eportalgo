@@ -36,30 +36,30 @@ func (h *OnlineClassSessionHandler) CreateOnlineClassSession(w http.ResponseWrit
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	if req.ClassID == "" || req.SessionTitle == "" || req.StartTime == "" || req.EndTime == "" || req.MeetingLink == "" {
-		middleware.SendError(w, "Class ID, session title, start time, end time, and meeting link are required", http.StatusBadRequest)
+		middleware.ValidationError(w, "Class ID, session title, start time, end time, and meeting link are required", nil)
 		return
 	}
 
 	classID, err := uuid.Parse(req.ClassID)
 	if err != nil {
-		middleware.SendError(w, "Invalid class ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid class ID", err)
 		return
 	}
 
 	startTime, err := time.Parse(time.RFC3339, req.StartTime)
 	if err != nil {
-		middleware.SendError(w, "Invalid start time format", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid start time format", err)
 		return
 	}
 
 	endTime, err := time.Parse(time.RFC3339, req.EndTime)
 	if err != nil {
-		middleware.SendError(w, "Invalid end time format", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid end time format", err)
 		return
 	}
 
@@ -76,7 +76,7 @@ func (h *OnlineClassSessionHandler) CreateOnlineClassSession(w http.ResponseWrit
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create online class session", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create online class session", err)
 		return
 	}
 
@@ -116,7 +116,7 @@ func (h *OnlineClassSessionHandler) GetOnlineClassSessions(w http.ResponseWriter
 		TeacherID: teacherID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch online class sessions", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch online class sessions", err)
 		return
 	}
 
@@ -127,7 +127,7 @@ func (h *OnlineClassSessionHandler) GetOnlineClassSessionByID(w http.ResponseWri
 	idStr := chi.URLParam(r, "id")
 	sessionID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid session ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid session ID", err)
 		return
 	}
 
@@ -139,13 +139,13 @@ func (h *OnlineClassSessionHandler) GetOnlineClassSessionByID(w http.ResponseWri
 		SchoolID:  schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Online class session not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Online class session not found", err)
 		return
 	}
 
 	// Ensure teacher can only access their own sessions unless they are an admin
 	if userCtx.RoleName == "Teacher" && session.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to view this online class session", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this online class session", err)
 		return
 	}
 
@@ -156,7 +156,7 @@ func (h *OnlineClassSessionHandler) UpdateOnlineClassSession(w http.ResponseWrit
 	idStr := chi.URLParam(r, "id")
 	sessionID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid session ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid session ID", err)
 		return
 	}
 
@@ -173,7 +173,7 @@ func (h *OnlineClassSessionHandler) UpdateOnlineClassSession(w http.ResponseWrit
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -182,13 +182,13 @@ func (h *OnlineClassSessionHandler) UpdateOnlineClassSession(w http.ResponseWrit
 		SchoolID:  schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Online class session not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Online class session not found", err)
 		return
 	}
 
 	// Ensure teacher can only update their own sessions unless they are an admin
 	if userCtx.RoleName == "Teacher" && existingSession.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to update this online class session", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to update this online class session", err)
 		return
 	}
 
@@ -229,7 +229,7 @@ func (h *OnlineClassSessionHandler) UpdateOnlineClassSession(w http.ResponseWrit
 
 	updatedSession, err := h.Queries.UpdateOnlineClassSession(r.Context(), params)
 	if err != nil {
-		middleware.SendError(w, "Could not update online class session", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update online class session", err)
 		return
 	}
 
@@ -240,7 +240,7 @@ func (h *OnlineClassSessionHandler) DeleteOnlineClassSession(w http.ResponseWrit
 	idStr := chi.URLParam(r, "id")
 	sessionID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid session ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid session ID", err)
 		return
 	}
 
@@ -252,13 +252,13 @@ func (h *OnlineClassSessionHandler) DeleteOnlineClassSession(w http.ResponseWrit
 		SchoolID:  schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Online class session not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Online class session not found", err)
 		return
 	}
 
 	// Ensure teacher can only delete their own sessions unless they are an admin
 	if userCtx.RoleName == "Teacher" && existingSession.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to delete this online class session", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to delete this online class session", err)
 		return
 	}
 
@@ -268,9 +268,12 @@ func (h *OnlineClassSessionHandler) DeleteOnlineClassSession(w http.ResponseWrit
 		TeacherID: existingSession.TeacherID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not delete online class session", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete online class session", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

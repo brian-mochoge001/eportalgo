@@ -30,7 +30,7 @@ func (h *EnrollmentHandler) GetEnrollments(w http.ResponseWriter, r *http.Reques
 
 	enrollments, err := h.Queries.GetEnrollmentsBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch enrollments", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch enrollments", err)
 		return
 	}
 
@@ -55,7 +55,7 @@ func (h *EnrollmentHandler) OnboardNewStudent(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -65,7 +65,7 @@ func (h *EnrollmentHandler) OnboardNewStudent(w http.ResponseWriter, r *http.Req
 
 	tx, err := h.DB.Begin()
 	if err != nil {
-		middleware.SendError(w, "Internal Server Error", http.StatusInternalServerError)
+		middleware.InternalError(w, "Internal Server Error", err)
 		return
 	}
 	defer tx.Rollback()
@@ -92,7 +92,7 @@ func (h *EnrollmentHandler) OnboardNewStudent(w http.ResponseWriter, r *http.Req
 		IsActive:     true,
 	})
 	if err != nil {
-		middleware.SendError(w, "Failed to create student user", http.StatusInternalServerError)
+		middleware.InternalError(w, "Failed to create student user", err)
 		return
 	}
 
@@ -122,7 +122,7 @@ func (h *EnrollmentHandler) OnboardNewStudent(w http.ResponseWriter, r *http.Req
 				IsActive:     true,
 			})
 			if err != nil {
-				middleware.SendError(w, "Failed to create parent user", http.StatusInternalServerError)
+				middleware.InternalError(w, "Failed to create parent user", err)
 				return
 			}
 			_, err = qtx.CreateParentProfile(r.Context(), db.CreateParentProfileParams{
@@ -130,11 +130,11 @@ func (h *EnrollmentHandler) OnboardNewStudent(w http.ResponseWriter, r *http.Req
 				SchoolID: schoolID,
 			})
 			if err != nil {
-				middleware.SendError(w, "Failed to create parent profile", http.StatusInternalServerError)
+				middleware.InternalError(w, "Failed to create parent profile", err)
 				return
 			}
 		} else {
-			middleware.SendError(w, "Failed to check parent user", http.StatusInternalServerError)
+			middleware.InternalError(w, "Failed to check parent user", err)
 			return
 		}
 	}
@@ -175,7 +175,7 @@ func (h *EnrollmentHandler) InitiateStudentTransfer(w http.ResponseWriter, r *ht
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not initiate transfer", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not initiate transfer", err)
 		return
 	}
 
@@ -221,3 +221,6 @@ func (h *EnrollmentHandler) ProcessIncomingTransfer(w http.ResponseWriter, r *ht
 	tx.Commit()
 	json.NewEncoder(w).Encode(updated)
 }
+
+
+

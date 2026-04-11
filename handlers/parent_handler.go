@@ -24,7 +24,7 @@ func (h *ParentHandler) GetParents(w http.ResponseWriter, r *http.Request) {
 
 	parents, err := h.Queries.GetParentsBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch parents", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch parents", err)
 		return
 	}
 
@@ -43,9 +43,12 @@ func (h *ParentHandler) GetParentByID(w http.ResponseWriter, r *http.Request) {
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Parent not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Parent not found", err)
 		return
 	}
 
 	json.NewEncoder(w).Encode(parent)
 }
+
+
+

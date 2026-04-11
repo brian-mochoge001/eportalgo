@@ -32,12 +32,12 @@ func (h *ExternalCertificationHandler) CreateExternalCertification(w http.Respon
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	if req.Name == "" || req.Issuer == "" || req.VerificationURL == "" {
-		middleware.SendError(w, "Name, issuer, and verification URL are required", http.StatusBadRequest)
+		middleware.ValidationError(w, "Name, issuer, and verification URL are required", nil)
 		return
 	}
 
@@ -71,7 +71,7 @@ func (h *ExternalCertificationHandler) CreateExternalCertification(w http.Respon
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not add external certification", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not add external certification", err)
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *ExternalCertificationHandler) GetExternalCertifications(w http.Response
 
 	certs, err := h.Queries.GetExternalCertifications(r.Context(), studentID.UUID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch external certifications", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch external certifications", err)
 		return
 	}
 
@@ -105,7 +105,7 @@ func (h *ExternalCertificationHandler) GetExternalCertificationByID(w http.Respo
 	idStr := chi.URLParam(r, "id")
 	certID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid certification ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid certification ID", err)
 		return
 	}
 
@@ -113,12 +113,12 @@ func (h *ExternalCertificationHandler) GetExternalCertificationByID(w http.Respo
 
 	cert, err := h.Queries.GetExternalCertificationByID(r.Context(), certID)
 	if err != nil {
-		middleware.SendError(w, "External certification not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "External certification not found", err)
 		return
 	}
 
 	if userCtx.RoleName == "Student" && cert.StudentID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to view this external certification", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this external certification", err)
 		return
 	}
 
@@ -129,7 +129,7 @@ func (h *ExternalCertificationHandler) UpdateExternalCertification(w http.Respon
 	idStr := chi.URLParam(r, "id")
 	certID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid certification ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid certification ID", err)
 		return
 	}
 
@@ -146,19 +146,19 @@ func (h *ExternalCertificationHandler) UpdateExternalCertification(w http.Respon
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	existingCert, err := h.Queries.GetExternalCertificationByID(r.Context(), certID)
 	if err != nil {
-		middleware.SendError(w, "External certification not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "External certification not found", err)
 		return
 	}
 
 	isAdmin := userCtx.RoleName == "Executive Administrator" || userCtx.RoleName == "Academic Administrator"
 	if existingCert.StudentID != userCtx.UserID && !isAdmin {
-		middleware.SendError(w, "Not authorized to update this external certification", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to update this external certification", err)
 		return
 	}
 
@@ -205,7 +205,7 @@ func (h *ExternalCertificationHandler) UpdateExternalCertification(w http.Respon
 
 	updated, err := h.Queries.UpdateExternalCertification(r.Context(), params)
 	if err != nil {
-		middleware.SendError(w, "Could not update external certification", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update external certification", err)
 		return
 	}
 
@@ -216,7 +216,7 @@ func (h *ExternalCertificationHandler) DeleteExternalCertification(w http.Respon
 	idStr := chi.URLParam(r, "id")
 	certID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid certification ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid certification ID", err)
 		return
 	}
 
@@ -224,21 +224,24 @@ func (h *ExternalCertificationHandler) DeleteExternalCertification(w http.Respon
 
 	existingCert, err := h.Queries.GetExternalCertificationByID(r.Context(), certID)
 	if err != nil {
-		middleware.SendError(w, "External certification not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "External certification not found", err)
 		return
 	}
 
 	isAdmin := userCtx.RoleName == "Executive Administrator" || userCtx.RoleName == "Academic Administrator"
 	if existingCert.StudentID != userCtx.UserID && !isAdmin {
-		middleware.SendError(w, "Not authorized to delete this external certification", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to delete this external certification", err)
 		return
 	}
 
 	err = h.Queries.DeleteExternalCertification(r.Context(), certID)
 	if err != nil {
-		middleware.SendError(w, "Could not delete external certification", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete external certification", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

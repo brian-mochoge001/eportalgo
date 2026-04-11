@@ -31,18 +31,18 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	if len(req.StudentIDs) > 4 {
-		middleware.SendError(w, "A group can have a maximum of 5 students, including the creator", http.StatusBadRequest)
+		middleware.ValidationError(w, "A group can have a maximum of 5 students, including the creator", nil)
 		return
 	}
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		middleware.SendError(w, "Could not start transaction", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not start transaction", err)
 		return
 	}
 	defer tx.Rollback()
@@ -58,7 +58,7 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		IsActive:        true,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not create chat room", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create chat room", err)
 		return
 	}
 
@@ -72,7 +72,7 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		ChatRoomID:       uuid.NullUUID{UUID: chatRoom.ChatRoomID, Valid: true},
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not create group", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create group", err)
 		return
 	}
 
@@ -83,7 +83,7 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		Status:  "accepted",
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not add creator to group", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not add creator to group", err)
 		return
 	}
 
@@ -95,13 +95,13 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 			Status:  "pending",
 		})
 		if err != nil {
-			middleware.SendError(w, "Could not invite student to group", http.StatusInternalServerError)
+			middleware.InternalError(w, "Could not invite student to group", err)
 			return
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		middleware.SendError(w, "Could not commit transaction", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not commit transaction", err)
 		return
 	}
 
@@ -121,13 +121,13 @@ func (h *GroupHandler) TeacherCreateGroup(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
-		middleware.SendError(w, "Could not start transaction", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not start transaction", err)
 		return
 	}
 	defer tx.Rollback()
@@ -195,3 +195,6 @@ func (h *GroupHandler) GetGroupMembers(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{"group_id": groupID, "members": []string{}})
 }
+
+
+

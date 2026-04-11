@@ -25,7 +25,7 @@ func (h *TeacherWorkloadHandler) CreateTeacherWorkload(w http.ResponseWriter, r 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -38,7 +38,7 @@ func (h *TeacherWorkloadHandler) CreateTeacherWorkload(w http.ResponseWriter, r 
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create teacher workload", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create teacher workload", err)
 		return
 	}
 
@@ -65,7 +65,7 @@ func (h *TeacherWorkloadHandler) GetTeacherWorkloads(w http.ResponseWriter, r *h
 		TeacherID: teacherID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch teacher workloads", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch teacher workloads", err)
 		return
 	}
 
@@ -80,12 +80,12 @@ func (h *TeacherWorkloadHandler) GetTeacherWorkloadByID(w http.ResponseWriter, r
 
 	workload, err := h.Queries.GetTeacherWorkloadByID(r.Context(), workloadID)
 	if err != nil {
-		middleware.SendError(w, "Teacher workload not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Teacher workload not found", err)
 		return
 	}
 
 	if userCtx.RoleName == "Teacher" && workload.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to view this workload", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to view this workload", nil)
 		return
 	}
 
@@ -104,18 +104,18 @@ func (h *TeacherWorkloadHandler) UpdateTeacherWorkload(w http.ResponseWriter, r 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	existingWorkload, err := h.Queries.GetTeacherWorkloadByID(r.Context(), workloadID)
 	if err != nil {
-		middleware.SendError(w, "Teacher workload not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Teacher workload not found", err)
 		return
 	}
 
 	if userCtx.RoleName == "Teacher" && existingWorkload.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to update this workload", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to update this workload", nil)
 		return
 	}
 
@@ -134,7 +134,7 @@ func (h *TeacherWorkloadHandler) UpdateTeacherWorkload(w http.ResponseWriter, r 
 
 	updated, err := h.Queries.UpdateTeacherWorkload(r.Context(), params)
 	if err != nil {
-		middleware.SendError(w, "Could not update teacher workload", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update teacher workload", err)
 		return
 	}
 
@@ -149,20 +149,22 @@ func (h *TeacherWorkloadHandler) DeleteTeacherWorkload(w http.ResponseWriter, r 
 
 	existingWorkload, err := h.Queries.GetTeacherWorkloadByID(r.Context(), workloadID)
 	if err != nil {
-		middleware.SendError(w, "Teacher workload not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Teacher workload not found", err)
 		return
 	}
 
 	if userCtx.RoleName == "Teacher" && existingWorkload.TeacherID != userCtx.UserID {
-		middleware.SendError(w, "Not authorized to delete this workload", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to delete this workload", nil)
 		return
 	}
 
 	err = h.Queries.DeleteTeacherWorkload(r.Context(), workloadID)
 	if err != nil {
-		middleware.SendError(w, "Could not delete teacher workload", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete teacher workload", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+

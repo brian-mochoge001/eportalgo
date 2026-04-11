@@ -23,7 +23,7 @@ func (h *FeeHandler) GetFeeStructures(w http.ResponseWriter, r *http.Request) {
 
 	fees, err := h.Queries.GetFeeStructuresBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch fee structures", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch fee structures", err)
 		return
 	}
 
@@ -43,7 +43,7 @@ func (h *FeeHandler) CreateFeeStructure(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -58,7 +58,7 @@ func (h *FeeHandler) CreateFeeStructure(w http.ResponseWriter, r *http.Request) 
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create fee structure", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create fee structure", err)
 		return
 	}
 
@@ -72,7 +72,7 @@ func (h *FeeHandler) GetStudentFees(w http.ResponseWriter, r *http.Request) {
 
 	studentFees, err := h.Queries.GetStudentFeesBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch student fees", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch student fees", err)
 		return
 	}
 
@@ -92,7 +92,7 @@ func (h *FeeHandler) CreateStudentFee(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -110,10 +110,13 @@ func (h *FeeHandler) CreateStudentFee(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create student fee", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create student fee", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(studentFee)
 }
+
+
+

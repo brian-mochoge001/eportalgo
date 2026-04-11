@@ -34,12 +34,12 @@ func (h *LearningMaterialHandler) CreateLearningMaterial(w http.ResponseWriter, 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	if req.Title == "" || req.FileUrl == "" || req.MaterialType == "" {
-		middleware.SendError(w, "Title, file URL, and material type are required", http.StatusBadRequest)
+		middleware.ValidationError(w, "Title, file URL, and material type are required", nil)
 		return
 	}
 
@@ -69,7 +69,7 @@ func (h *LearningMaterialHandler) CreateLearningMaterial(w http.ResponseWriter, 
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create learning material", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create learning material", err)
 		return
 	}
 
@@ -104,7 +104,7 @@ func (h *LearningMaterialHandler) GetLearningMaterials(w http.ResponseWriter, r 
 		CourseID: courseID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not fetch learning materials", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch learning materials", err)
 		return
 	}
 
@@ -115,7 +115,7 @@ func (h *LearningMaterialHandler) GetLearningMaterialByID(w http.ResponseWriter,
 	idStr := chi.URLParam(r, "id")
 	materialID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid material ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid material ID", err)
 		return
 	}
 
@@ -127,7 +127,7 @@ func (h *LearningMaterialHandler) GetLearningMaterialByID(w http.ResponseWriter,
 		SchoolID:   schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Learning material not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Learning material not found", err)
 		return
 	}
 
@@ -138,7 +138,7 @@ func (h *LearningMaterialHandler) UpdateLearningMaterial(w http.ResponseWriter, 
 	idStr := chi.URLParam(r, "id")
 	materialID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid material ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid material ID", err)
 		return
 	}
 
@@ -155,7 +155,7 @@ func (h *LearningMaterialHandler) UpdateLearningMaterial(w http.ResponseWriter, 
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -164,7 +164,7 @@ func (h *LearningMaterialHandler) UpdateLearningMaterial(w http.ResponseWriter, 
 		SchoolID:   schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Learning material not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Learning material not found", err)
 		return
 	}
 
@@ -204,7 +204,7 @@ func (h *LearningMaterialHandler) UpdateLearningMaterial(w http.ResponseWriter, 
 
 	updatedMaterial, err := h.Queries.UpdateLearningMaterial(r.Context(), params)
 	if err != nil {
-		middleware.SendError(w, "Could not update learning material", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update learning material", err)
 		return
 	}
 
@@ -215,7 +215,7 @@ func (h *LearningMaterialHandler) DeleteLearningMaterial(w http.ResponseWriter, 
 	idStr := chi.URLParam(r, "id")
 	materialID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid material ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid material ID", err)
 		return
 	}
 
@@ -227,9 +227,12 @@ func (h *LearningMaterialHandler) DeleteLearningMaterial(w http.ResponseWriter, 
 		SchoolID:   schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not delete learning material", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete learning material", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

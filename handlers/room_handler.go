@@ -24,7 +24,7 @@ func (h *RoomHandler) GetRooms(w http.ResponseWriter, r *http.Request) {
 
 	rooms, err := h.Queries.GetRoomsBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch rooms", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch rooms", err)
 		return
 	}
 
@@ -43,7 +43,7 @@ func (h *RoomHandler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -56,7 +56,7 @@ func (h *RoomHandler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create room", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create room", err)
 		return
 	}
 
@@ -76,7 +76,7 @@ func (h *RoomHandler) GetRoomByID(w http.ResponseWriter, r *http.Request) {
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Room not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Room not found", err)
 		return
 	}
 
@@ -98,7 +98,7 @@ func (h *RoomHandler) UpdateRoom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
@@ -107,7 +107,7 @@ func (h *RoomHandler) UpdateRoom(w http.ResponseWriter, r *http.Request) {
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Room not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Room not found", err)
 		return
 	}
 
@@ -135,7 +135,7 @@ func (h *RoomHandler) UpdateRoom(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.Queries.UpdateRoom(r.Context(), params)
 	if err != nil {
-		middleware.SendError(w, "Could not update room", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update room", err)
 		return
 	}
 
@@ -154,9 +154,12 @@ func (h *RoomHandler) DeleteRoom(w http.ResponseWriter, r *http.Request) {
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Could not delete room", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete room", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

@@ -30,12 +30,12 @@ func (h *NewsletterHandler) CreateNewsletter(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	if req.Title == "" || req.Content == "" {
-		middleware.SendError(w, "Title and content are required", http.StatusBadRequest)
+		middleware.ValidationError(w, "Title and content are required", nil)
 		return
 	}
 
@@ -52,7 +52,7 @@ func (h *NewsletterHandler) CreateNewsletter(w http.ResponseWriter, r *http.Requ
 	})
 
 	if err != nil {
-		middleware.SendError(w, "Could not create newsletter", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not create newsletter", err)
 		return
 	}
 
@@ -75,7 +75,7 @@ func (h *NewsletterHandler) GetNewsletters(w http.ResponseWriter, r *http.Reques
 
 	newsletters, err := h.Queries.GetNewsletters(r.Context(), schoolIDJSON)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch newsletters", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch newsletters", err)
 		return
 	}
 
@@ -86,13 +86,13 @@ func (h *NewsletterHandler) GetNewsletterByID(w http.ResponseWriter, r *http.Req
 	idStr := chi.URLParam(r, "id")
 	newsletterID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid newsletter ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid newsletter ID", err)
 		return
 	}
 
 	newsletter, err := h.Queries.GetNewsletterByID(r.Context(), newsletterID)
 	if err != nil {
-		middleware.SendError(w, "Newsletter not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Newsletter not found", err)
 		return
 	}
 
@@ -129,7 +129,7 @@ func (h *NewsletterHandler) GetNewsletterByID(w http.ResponseWriter, r *http.Req
 		}
 
 		if !isTargeted {
-			middleware.SendError(w, "Not authorized to view this newsletter", http.StatusForbidden)
+			middleware.ForbiddenError(w, "Not authorized to view this newsletter", err)
 			return
 		}
 	}
@@ -141,7 +141,7 @@ func (h *NewsletterHandler) UpdateNewsletter(w http.ResponseWriter, r *http.Requ
 	idStr := chi.URLParam(r, "id")
 	newsletterID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid newsletter ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid newsletter ID", err)
 		return
 	}
 
@@ -156,7 +156,7 @@ func (h *NewsletterHandler) UpdateNewsletter(w http.ResponseWriter, r *http.Requ
 	}
 
 	if !isSuperAdmin {
-		middleware.SendError(w, "Not authorized to update newsletters", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to update newsletters", err)
 		return
 	}
 
@@ -167,13 +167,13 @@ func (h *NewsletterHandler) UpdateNewsletter(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		middleware.SendError(w, "Invalid request body", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid request body", err)
 		return
 	}
 
 	existingNewsletter, err := h.Queries.GetNewsletterByID(r.Context(), newsletterID)
 	if err != nil {
-		middleware.SendError(w, "Newsletter not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Newsletter not found", err)
 		return
 	}
 
@@ -197,7 +197,7 @@ func (h *NewsletterHandler) UpdateNewsletter(w http.ResponseWriter, r *http.Requ
 
 	updatedNewsletter, err := h.Queries.UpdateNewsletter(r.Context(), params)
 	if err != nil {
-		middleware.SendError(w, "Could not update newsletter", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not update newsletter", err)
 		return
 	}
 
@@ -208,7 +208,7 @@ func (h *NewsletterHandler) DeleteNewsletter(w http.ResponseWriter, r *http.Requ
 	idStr := chi.URLParam(r, "id")
 	newsletterID, err := uuid.Parse(idStr)
 	if err != nil {
-		middleware.SendError(w, "Invalid newsletter ID", http.StatusBadRequest)
+		middleware.ValidationError(w, "Invalid newsletter ID", err)
 		return
 	}
 
@@ -223,15 +223,18 @@ func (h *NewsletterHandler) DeleteNewsletter(w http.ResponseWriter, r *http.Requ
 	}
 
 	if !isSuperAdmin {
-		middleware.SendError(w, "Not authorized to delete newsletters", http.StatusForbidden)
+		middleware.ForbiddenError(w, "Not authorized to delete newsletters", err)
 		return
 	}
 
 	err = h.Queries.DeleteNewsletter(r.Context(), newsletterID)
 	if err != nil {
-		middleware.SendError(w, "Could not delete newsletter", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not delete newsletter", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+
+

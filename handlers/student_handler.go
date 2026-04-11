@@ -24,7 +24,7 @@ func (h *StudentHandler) GetStudents(w http.ResponseWriter, r *http.Request) {
 
 	students, err := h.Queries.GetStudentsBySchool(r.Context(), schoolID)
 	if err != nil {
-		middleware.SendError(w, "Could not fetch students", http.StatusInternalServerError)
+		middleware.InternalError(w, "Could not fetch students", err)
 		return
 	}
 
@@ -43,9 +43,12 @@ func (h *StudentHandler) GetStudentByID(w http.ResponseWriter, r *http.Request) 
 		SchoolID: schoolID,
 	})
 	if err != nil {
-		middleware.SendError(w, "Student not found", http.StatusNotFound)
+		middleware.NotFoundError(w, "Student not found", err)
 		return
 	}
 
 	json.NewEncoder(w).Encode(student)
 }
+
+
+
