@@ -7,7 +7,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
+
 	firebase "firebase.google.com/go/v4"
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/handlers"
@@ -53,8 +55,29 @@ func main() {
 
 	// Initialize Firebase Admin SDK
 	credsPath := os.Getenv("FIREBASE_CREDENTIALS_PATH")
+	
+	// If env var is missing, try common locations
 	if credsPath == "" {
-		log.Fatal("FIREBASE_CREDENTIALS_PATH environment variable is required")
+		possiblePaths := []string{
+			"/etc/secrets/eschool-infinnitydevelopers-firebase-adminsdk.json",
+			"eschool-infinnitydevelopers-firebase-adminsdk.json",
+		}
+		for _, p := range possiblePaths {
+			if _, err := os.Stat(p); err == nil {
+				credsPath = p
+				fmt.Printf("Auto-detected Firebase credentials at: %s\n", p)
+				break
+			}
+		}
+	}
+
+	if credsPath == "" {
+		fmt.Println("DEBUG: FIREBASE_CREDENTIALS_PATH is empty and no fallback files found. Available environment variables (keys only):")
+		for _, e := range os.Environ() {
+			pair := strings.SplitN(e, "=", 2)
+			fmt.Printf("- %s\n", pair[0])
+		}
+		log.Fatal("FIREBASE_CREDENTIALS_PATH environment variable is required or credentials must exist at /etc/secrets/eschool-infinnitydevelopers-firebase-adminsdk.json")
 	}
 
 	// Verify file exists

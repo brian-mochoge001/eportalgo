@@ -1,28 +1,28 @@
 # Build stage
 FROM golang:1.26-alpine AS builder
 
-# Install necessary build tools
+# Install build tools
 RUN apk add --no-cache git
 
 WORKDIR /app
 
-# Copy go mod and sum files
+# go mod and sum files
 COPY go.mod go.sum ./
 
-# Download dependencies
+# Dependencies
 RUN go mod download
 
-# Copy the rest of the source code
+# Source code
 COPY . .
 
-# Build the application
-# Use -ldflags to reduce binary size
+# Build
+# -ldflags to reduce binary size
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o main .
 
 # Run stage
 FROM alpine:3.18
 
-# Install ca-certificates (needed for Firebase and external APIs)
+# Install ca-certificates
 # Install postgresql-client for schema and seed scripts if needed
 RUN apk add --no-cache ca-certificates postgresql-client bash
 
