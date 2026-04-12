@@ -2,20 +2,18 @@ package middleware
 
 import (
 	"bytes"
-	"context"
-	"database/sql"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 
-	"github.com/brian-mochoge001/eportalgo/db"
-	"github.com/google/uuid"
+	"github.com/brian-mochoge001/eportalgo/worker"
+	"github.com/hibiken/asynq"
 	"github.com/sqlc-dev/pqtype"
 )
 
 // AuditMiddleware logs data-modifying actions
-func AuditMiddleware(queries *db.Queries) func(http.Handler) http.Handler {
+func AuditMiddleware(asynqClient *asynq.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user, ok := GetUser(r.Context())
@@ -43,25 +41,19 @@ func AuditMiddleware(queries *db.Queries) func(http.Handler) http.Handler {
 					newValue = pqtype.NullRawMessage{RawMessage: json.RawMessage(bodyBytes), Valid: true}
 				}
 
-				// Execute the request first to see if it succeeds? 
-				// The Node.js version calls next() after starting the async create call.
-				// In Go, we'll run it in a goroutine to not block the request.
-				go func(schoolID uuid.NullUUID, userID uuid.UUID, action string, newValue pqtype.NullRawMessage, ip string, ua string) {
-					_, err := queries.CreateAuditLog(context.Background(), db.CreateAuditLogParams{
-						SchoolID:   schoolID,
-						UserID:     uuid.NullUUID{UUID: userID, Valid: true},
-						Action:     action,
-						EntityType: "Unknown", // Placeholder as in Node.js version
-						EntityID:   uuid.NullUUID{Valid: false},
-						OldValue:   pqtype.NullRawMessage{Valid: false},
-						NewValue:   newValue,
-						IpAddress:  sql.NullString{String: ip, Valid: true},
-						UserAgent:  sql.NullString{String: ua, Valid: true},
-					})
-					if err != nil {
-						slog.Error("Failed to create audit log", "error", err)
-					}
-				}(user.SchoolID, user.UserID, action, newValue, ipAddress, userAgent)
+				// Notify audit logger (Async via Asynq)
+				payload, _ := json.Marshal(worker.AuditLogPayload{
+					SchoolID:  user.SchoolID,
+					UserID:    user.UserID,
+					Action:    action,
+					NewValue:  newValue,
+					IpAddress: ipAddress,
+					UserAgent: userAgent,
+				})
+				task := asynq.NewTask(worker.TypeAuditLog, payload)
+				if _, err := asynqClient.Enqueue(task); err != nil {
+					slog.Error("could not enqueue audit task", "error", err)
+				}
 			}
 
 			next.ServeHTTP(w, r)

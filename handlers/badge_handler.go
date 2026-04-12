@@ -20,10 +20,11 @@ func NewBadgeHandler(q *db.Queries) *BadgeHandler {
 }
 
 func (h *BadgeHandler) GetBadges(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
-	badges, err := h.Queries.GetBadgesBySchool(r.Context(), schoolID)
+	badges, err := q.GetBadgesBySchool(r.Context(), schoolID)
 	if err != nil {
 		middleware.InternalError(w, "Could not fetch badges", err)
 		return
@@ -37,13 +38,14 @@ func (h *BadgeHandler) GetBadges(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BadgeHandler) GetBadgeByID(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	idStr := chi.URLParam(r, "id")
 	id, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
-	badge, err := h.Queries.GetBadgeByID(r.Context(), db.GetBadgeByIDParams{
+	badge, err := q.GetBadgeByID(r.Context(), db.GetBadgeByIDParams{
 		BadgeID: id,
 		SchoolID: schoolID,
 	})
@@ -63,6 +65,7 @@ func (h *BadgeHandler) GetBadgeByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BadgeHandler) CreateBadge(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
@@ -78,7 +81,7 @@ func (h *BadgeHandler) CreateBadge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	badge, err := h.Queries.CreateBadge(r.Context(), db.CreateBadgeParams{
+	badge, err := q.CreateBadge(r.Context(), db.CreateBadgeParams{
 		SchoolID:    schoolID,
 		BadgeName:   req.BadgeName,
 		Description: sql.NullString{String: req.Description, Valid: req.Description != ""},
@@ -99,6 +102,7 @@ func (h *BadgeHandler) CreateBadge(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BadgeHandler) UpdateBadge(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	idStr := chi.URLParam(r, "id")
 	id, _ := uuid.Parse(idStr)
 
@@ -113,7 +117,7 @@ func (h *BadgeHandler) UpdateBadge(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
-	updated, err := h.Queries.UpdateBadge(r.Context(), db.UpdateBadgeParams{
+	updated, err := q.UpdateBadge(r.Context(), db.UpdateBadgeParams{
 		BadgeID:     id,
 		BadgeName:   req.BadgeName,
 		Description: sql.NullString{String: req.Description, Valid: req.Description != ""},
@@ -134,13 +138,14 @@ func (h *BadgeHandler) UpdateBadge(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BadgeHandler) DeleteBadge(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	idStr := chi.URLParam(r, "id")
 	id, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
-	err := h.Queries.DeleteBadge(r.Context(), db.DeleteBadgeParams{
+	err := q.DeleteBadge(r.Context(), db.DeleteBadgeParams{
 		BadgeID: id,
 		SchoolID: schoolID,
 	})
@@ -154,6 +159,7 @@ func (h *BadgeHandler) DeleteBadge(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BadgeHandler) AwardBadge(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	badgeIDStr := chi.URLParam(r, "badgeId")
 	badgeID, _ := uuid.Parse(badgeIDStr)
 
@@ -168,7 +174,7 @@ func (h *BadgeHandler) AwardBadge(w http.ResponseWriter, r *http.Request) {
 	studentID, _ := uuid.Parse(req.StudentID)
 
 	// Verify student
-	student, err := h.Queries.GetUser(r.Context(), db.GetUserParams{
+	student, err := q.GetUser(r.Context(), db.GetUserParams{
 		UserID:   studentID,
 		SchoolID: uuid.NullUUID{UUID: schoolID, Valid: true},
 	})
@@ -177,7 +183,7 @@ func (h *BadgeHandler) AwardBadge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	award, err := h.Queries.AwardBadge(r.Context(), db.AwardBadgeParams{
+	award, err := q.AwardBadge(r.Context(), db.AwardBadgeParams{
 		SchoolID:         schoolID,
 		StudentID:        studentID,
 		BadgeID:          badgeID,
@@ -199,6 +205,7 @@ func (h *BadgeHandler) AwardBadge(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BadgeHandler) RevokeBadge(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	badgeIDStr := chi.URLParam(r, "badgeId")
 	studentIDStr := chi.URLParam(r, "studentId")
 	badgeID, _ := uuid.Parse(badgeIDStr)
@@ -207,7 +214,7 @@ func (h *BadgeHandler) RevokeBadge(w http.ResponseWriter, r *http.Request) {
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
-	err := h.Queries.RevokeBadge(r.Context(), db.RevokeBadgeParams{
+	err := q.RevokeBadge(r.Context(), db.RevokeBadgeParams{
 		BadgeID:   badgeID,
 		StudentID: studentID,
 		SchoolID:  schoolID,

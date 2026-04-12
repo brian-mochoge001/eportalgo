@@ -53,7 +53,8 @@ CREATE TABLE lesson_plans (
   online_meeting_link  TEXT,
   date_covered         DATE,
   created_at           TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at           TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at           TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at           TIMESTAMPTZ(6)
 );
 
 CREATE TABLE learning_materials (

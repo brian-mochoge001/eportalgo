@@ -17,6 +17,12 @@ require (
 )
 
 require (
+	github.com/hibiken/asynq v0.26.0 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
+	github.com/spf13/cast v1.10.0 // indirect
+)
+
+require (
 	cel.dev/expr v0.25.1 // indirect
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth v0.18.2 // indirect

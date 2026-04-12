@@ -21,13 +21,14 @@ func NewAttendanceHandler(q *db.Queries) *AttendanceHandler {
 }
 
 func (h *AttendanceHandler) GetAttendanceByClass(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	classIDStr := chi.URLParam(r, "class_id")
 	classID, _ := uuid.Parse(classIDStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
-	attendance, err := h.Queries.GetAttendanceByClass(r.Context(), db.GetAttendanceByClassParams{
+	attendance, err := q.GetAttendanceByClass(r.Context(), db.GetAttendanceByClassParams{
 		ClassID:  classID,
 		SchoolID: schoolID,
 	})
@@ -40,6 +41,7 @@ func (h *AttendanceHandler) GetAttendanceByClass(w http.ResponseWriter, r *http.
 }
 
 func (h *AttendanceHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	var req struct {
 		ClassID            string `json:"class_id"`
 		AttendanceDate     string `json:"attendance_date"`
@@ -61,7 +63,7 @@ func (h *AttendanceHandler) MarkAttendance(w http.ResponseWriter, r *http.Reques
 	attDate, _ := time.Parse("2006-01-02", req.AttendanceDate)
 
 	// Verify teacher
-	academicClass, err := h.Queries.GetClassByID(r.Context(), db.GetClassByIDParams{
+	academicClass, err := q.GetClassByID(r.Context(), db.GetClassByIDParams{
 		ClassID:  classID,
 		SchoolID: schoolID,
 	})
@@ -75,7 +77,7 @@ func (h *AttendanceHandler) MarkAttendance(w http.ResponseWriter, r *http.Reques
 		sid, _ := uuid.Parse(s.StudentID)
 		
 		// Check existing
-		existing, err := h.Queries.GetAttendanceRecordByUnique(r.Context(), db.GetAttendanceRecordByUniqueParams{
+		existing, err := q.GetAttendanceRecordByUnique(r.Context(), db.GetAttendanceRecordByUniqueParams{
 			SchoolID:       schoolID,
 			StudentID:      sid,
 			ClassID:        classID,
@@ -84,14 +86,14 @@ func (h *AttendanceHandler) MarkAttendance(w http.ResponseWriter, r *http.Reques
 
 		var record db.AttendanceRecord
 		if err == nil {
-			record, _ = h.Queries.UpdateAttendanceRecord(r.Context(), db.UpdateAttendanceRecordParams{
+			record, _ = q.UpdateAttendanceRecord(r.Context(), db.UpdateAttendanceRecordParams{
 				AttendanceID: existing.AttendanceID,
 				Status:       s.Status,
 				Notes:        sql.NullString{String: s.Notes, Valid: s.Notes != ""},
 				SchoolID:     schoolID,
 			})
 		} else {
-			record, _ = h.Queries.CreateAttendanceRecord(r.Context(), db.CreateAttendanceRecordParams{
+			record, _ = q.CreateAttendanceRecord(r.Context(), db.CreateAttendanceRecordParams{
 				SchoolID:       schoolID,
 				StudentID:      sid,
 				ClassID:        classID,
@@ -111,6 +113,7 @@ func (h *AttendanceHandler) MarkAttendance(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *AttendanceHandler) GetStudentAttendance(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	studentIDStr := chi.URLParam(r, "student_id")
 	studentID, _ := uuid.Parse(studentIDStr)
 
@@ -122,7 +125,7 @@ func (h *AttendanceHandler) GetStudentAttendance(w http.ResponseWriter, r *http.
 		return
 	}
 
-	attendance, err := h.Queries.GetStudentAttendance(r.Context(), db.GetStudentAttendanceParams{
+	attendance, err := q.GetStudentAttendance(r.Context(), db.GetStudentAttendanceParams{
 		StudentID: studentID,
 		SchoolID:  schoolID,
 	})

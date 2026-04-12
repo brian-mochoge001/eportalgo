@@ -22,6 +22,7 @@ func NewAuthHandler(q *db.Queries, fb *auth.Client) *AuthHandler {
 }
 
 func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	var req struct {
 		FirebaseUID string `json:"firebase_uid"`
 		Email       string `json:"email"`
@@ -37,14 +38,14 @@ func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if user exists
-	existing, _ := h.Queries.GetUserByFirebaseUID(r.Context(), sql.NullString{String: req.FirebaseUID, Valid: true})
+	existing, _ := q.GetUserByFirebaseUID(r.Context(), sql.NullString{String: req.FirebaseUID, Valid: true})
 	if existing.UserID != uuid.Nil {
 		middleware.SendError(w, "User already registered", http.StatusConflict, "CONFLICT", nil)
 		return
 	}
 
 	// Find role
-	role, err := h.Queries.GetRoleByName(r.Context(), req.RoleName)
+	role, err := q.GetRoleByName(r.Context(), req.RoleName)
 	if err != nil {
 		middleware.ValidationError(w, "Invalid role specified", err)
 		return
@@ -62,7 +63,7 @@ func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Verify school exists
-		_, err = h.Queries.GetSchool(r.Context(), sid)
+		_, err = q.GetSchool(r.Context(), sid)
 		if err != nil {
 			middleware.ValidationError(w, "School not found", err)
 			return
@@ -71,7 +72,7 @@ func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create User
-	user, err := h.Queries.CreateUser(r.Context(), db.CreateUserParams{
+	user, err := q.CreateUser(r.Context(), db.CreateUserParams{
 		FirebaseUid: sql.NullString{String: req.FirebaseUID, Valid: true},
 		Email:       req.Email,
 		FirstName:   req.FirstName,
@@ -109,6 +110,7 @@ func (h *AuthHandler) RegisterUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	var req struct {
 		IDToken string `json:"idToken"`
 	}
@@ -123,7 +125,7 @@ func (h *AuthHandler) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userRow, err := h.Queries.GetUserByFirebaseUID(r.Context(), sql.NullString{String: token.UID, Valid: true})
+	userRow, err := q.GetUserByFirebaseUID(r.Context(), sql.NullString{String: token.UID, Valid: true})
 	if err != nil {
 		if err == sql.ErrNoRows {
 			middleware.NotFoundError(w, "User not found in database", err)

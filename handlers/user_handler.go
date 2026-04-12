@@ -164,7 +164,12 @@ func (h *UserHandler) GetUsersBySchool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	users, err := h.Queries.ListUsersBySchool(r.Context(), uuid.NullUUID{UUID: schoolID, Valid: true})
+	query := r.URL.Query().Get("query")
+
+	users, err := h.Queries.ListUsersBySchool(r.Context(), db.ListUsersBySchoolParams{
+		SchoolID: uuid.NullUUID{UUID: schoolID, Valid: true},
+		Query:    sql.NullString{String: query, Valid: query != ""},
+	})
 	if err != nil {
 		middleware.InternalError(w, "Could not fetch users", err)
 		return

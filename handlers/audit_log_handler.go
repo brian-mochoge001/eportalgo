@@ -20,13 +20,14 @@ func NewAuditLogHandler(q *db.Queries) *AuditLogHandler {
 }
 
 func (h *AuditLogHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	userCtx, _ := middleware.GetUser(r.Context())
 	
 	// Query params for filtering
 	userIDStr := r.URL.Query().Get("userId")
 	entityType := r.URL.Query().Get("entityType")
 	entityIDStr := r.URL.Query().Get("entityId")
-	action := r.URL.Query().Get("action")
+	query := r.URL.Query().Get("query")
 
 	var userID uuid.NullUUID
 	if userIDStr != "" {
@@ -42,13 +43,13 @@ func (h *AuditLogHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) 
 
 	isSuperAdmin := isParentCompanyAdmin(userCtx.RoleName)
 
-	logs, err := h.Queries.ListAuditLogs(r.Context(), db.ListAuditLogsParams{
+	logs, err := q.ListAuditLogs(r.Context(), db.ListAuditLogsParams{
 		SchoolID:     userCtx.SchoolID,
 		IsSuperAdmin: isSuperAdmin,
 		UserID:       userID,
 		EntityType:   sql.NullString{String: entityType, Valid: entityType != ""},
 		EntityID:     entityID,
-		Action:       sql.NullString{String: action, Valid: action != ""},
+		Query:        sql.NullString{String: query, Valid: query != ""},
 	})
 
 	if err != nil {
@@ -64,12 +65,13 @@ func (h *AuditLogHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *AuditLogHandler) GetAuditLog(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	idStr := chi.URLParam(r, "id")
 	id, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 
-	auditLog, err := h.Queries.GetAuditLog(r.Context(), id)
+	auditLog, err := q.GetAuditLog(r.Context(), id)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			middleware.NotFoundError(w, "Audit log not found", err)

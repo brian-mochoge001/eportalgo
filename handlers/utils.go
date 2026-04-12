@@ -1,8 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"time"
+
+	"github.com/brian-mochoge001/eportalgo/db"
+	"github.com/brian-mochoge001/eportalgo/middleware"
 	"github.com/google/uuid"
 )
 
@@ -37,6 +41,13 @@ func parseDate(s string) (sql.NullTime, error) {
 		}
 	}
 	return sql.NullTime{Time: t, Valid: true}, nil
+}
+
+func GetQueries(ctx context.Context, defaultQueries *db.Queries) *db.Queries {
+	if conn, ok := middleware.GetConn(ctx); ok {
+		return db.New(conn)
+	}
+	return defaultQueries
 }
 
 

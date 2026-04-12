@@ -1,35 +1,38 @@
 package handlers
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/middleware"
+	"github.com/brian-mochoge001/eportalgo/worker"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 )
 
 type AssignmentHandler struct {
 	Queries *db.Queries
+	Asynq   *asynq.Client
 }
 
-func NewAssignmentHandler(q *db.Queries) *AssignmentHandler {
-	return &AssignmentHandler{Queries: q}
+func NewAssignmentHandler(q *db.Queries, asynqClient *asynq.Client) *AssignmentHandler {
+	return &AssignmentHandler{Queries: q, Asynq: asynqClient}
 }
 
 func (h *AssignmentHandler) GetAssignments(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	classIDStr := chi.URLParam(r, "class_id")
 	classID, _ := uuid.Parse(classIDStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
-	assignments, err := h.Queries.GetAssignmentsByClass(r.Context(), db.GetAssignmentsByClassParams{
+	assignments, err := q.GetAssignmentsByClass(r.Context(), db.GetAssignmentsByClassParams{
 		ClassID:  classID,
 		SchoolID: schoolID,
 	})
@@ -42,6 +45,7 @@ func (h *AssignmentHandler) GetAssignments(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *AssignmentHandler) CreateAssignment(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
@@ -64,7 +68,7 @@ func (h *AssignmentHandler) CreateAssignment(w http.ResponseWriter, r *http.Requ
 	dueDate, _ := time.Parse("2006-01-02", req.DueDate)
 
 	// Verify teacher
-	academicClass, err := h.Queries.GetClassByID(r.Context(), db.GetClassByIDParams{
+	academicClass, err := q.GetClassByID(r.Context(), db.GetClassByIDParams{
 		ClassID:  classID,
 		SchoolID: schoolID,
 	})
@@ -73,7 +77,7 @@ func (h *AssignmentHandler) CreateAssignment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	assignment, err := h.Queries.CreateAssignment(r.Context(), db.CreateAssignmentParams{
+	assignment, err := q.CreateAssignment(r.Context(), db.CreateAssignmentParams{
 		SchoolID:       schoolID,
 		ClassID:        classID,
 		TeacherID:      userCtx.UserID,
@@ -90,31 +94,26 @@ func (h *AssignmentHandler) CreateAssignment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Notify students (Async)
-	go func() {
-		students, _ := h.Queries.GetEnrollmentsByClass(context.Background(), classID)
-		notification, _ := h.Queries.CreateNotification(context.Background(), db.CreateNotificationParams{
-			SchoolID:         schoolID,
-			SenderID:         uuid.NullUUID{UUID: userCtx.UserID, Valid: true},
-			NotificationType: db.NotificationTypeANNOUNCEMENT,
-			Title:            "New Assignment: " + assignment.Title,
-			Message:          fmt.Sprintf("%s: due on %s", assignment.Title, dueDate.Format("2006-01-02")),
-			LinkUrl:          sql.NullString{String: "/assignments/" + assignment.AssignmentID.String(), Valid: true},
-		})
-
-		for _, studentID := range students {
-			h.Queries.CreateNotificationRecipient(context.Background(), db.CreateNotificationRecipientParams{
-				NotificationID: notification.NotificationID,
-				RecipientID:    studentID,
-			})
-		}
-	}()
+	// Notify students (Async via Asynq)
+	payload, _ := json.Marshal(worker.AssignmentNotificationPayload{
+		SchoolID:     schoolID,
+		ClassID:      classID,
+		TeacherID:    userCtx.UserID,
+		Title:        assignment.Title,
+		DueDate:      dueDate.Format("2006-01-02"),
+		AssignmentID: assignment.AssignmentID,
+	})
+	task := asynq.NewTask(worker.TypeAssignmentNotification, payload)
+	if _, err := h.Asynq.Enqueue(task); err != nil {
+		log.Printf("could not enqueue task: %v", err)
+	}
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(assignment)
 }
 
 func (h *AssignmentHandler) UpdateAssignment(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	idStr := chi.URLParam(r, "id")
 	id, _ := uuid.Parse(idStr)
 
@@ -133,7 +132,7 @@ func (h *AssignmentHandler) UpdateAssignment(w http.ResponseWriter, r *http.Requ
 
 	dueDate, _ := time.Parse("2006-01-02", req.DueDate)
 
-	updated, err := h.Queries.UpdateAssignment(r.Context(), db.UpdateAssignmentParams{
+	updated, err := q.UpdateAssignment(r.Context(), db.UpdateAssignmentParams{
 		AssignmentID:   id,
 		Title:          req.Title,
 		Description:    sql.NullString{String: req.Description, Valid: req.Description != ""},
@@ -153,13 +152,14 @@ func (h *AssignmentHandler) UpdateAssignment(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *AssignmentHandler) DeleteAssignment(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
 	idStr := chi.URLParam(r, "id")
 	id, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
-	err := h.Queries.DeleteAssignment(r.Context(), db.DeleteAssignmentParams{
+	err := q.DeleteAssignment(r.Context(), db.DeleteAssignmentParams{
 		AssignmentID: id,
 		SchoolID:     schoolID,
 		TeacherID:    userCtx.UserID,

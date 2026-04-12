@@ -12,9 +12,11 @@ import (
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/handlers"
 	custom_mw "github.com/brian-mochoge001/eportalgo/middleware"
+	"github.com/brian-mochoge001/eportalgo/worker"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
+	"github.com/hibiken/asynq"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
@@ -69,6 +71,15 @@ func main() {
 		Addr: redisURL,
 	})
 
+	// Initialize Asynq client and server
+	asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisURL})
+	defer asynqClient.Close()
+
+	asynqServer := asynq.NewServer(
+		asynq.RedisClientOpt{Addr: redisURL},
+		asynq.Config{Concurrency: 10},
+	)
+
 	// Security headers (Helmet equivalent)
 	secureMiddleware := secure.New(secure.Options{
 		FrameDeny:             true,
@@ -88,8 +99,9 @@ func main() {
 	subjectHandler := handlers.NewSubjectHandler(queries)
 	enrollmentHandler := handlers.NewEnrollmentHandler(queries, conn)
 	attendanceHandler := handlers.NewAttendanceHandler(queries)
-	assignmentHandler := handlers.NewAssignmentHandler(queries)
+	assignmentHandler := handlers.NewAssignmentHandler(queries, asynqClient)
 	auditLogHandler := handlers.NewAuditLogHandler(queries)
+	studentRiskHandler := handlers.NewStudentRiskHandler(queries, asynqClient)
 	badgeHandler := handlers.NewBadgeHandler(queries)
 	billingContactHandler := handlers.NewBillingContactHandler(queries, conn)
 	chatHandler := handlers.NewChatHandler(queries)
@@ -146,6 +158,19 @@ func main() {
 	r.Use(custom_mw.ErrorHandler)
 	r.Use(middleware.Recoverer)
 
+	// Start Asynq server
+	taskHandler := worker.NewTaskHandler(queries)
+	mux := asynq.NewServeMux()
+	mux.HandleFunc(worker.TypeAssignmentNotification, taskHandler.HandleAssignmentNotification)
+	mux.HandleFunc(worker.TypeAuditLog, taskHandler.HandleAuditLog)
+	mux.HandleFunc(worker.TypeCalculateRiskScores, taskHandler.HandleCalculateRiskScores)
+
+	go func() {
+		if err := asynqServer.Run(mux); err != nil {
+			log.Fatalf("could not run asynq server: %v", err)
+		}
+	}()
+
 	// Routes
 	r.Route("/api", func(r chi.Router) {
 		// Public routes
@@ -172,7 +197,8 @@ func main() {
 		// Protected routes
 		r.Group(func(r chi.Router) {
 			r.Use(custom_mw.AuthMiddleware(firebaseAuth, queries))
-			r.Use(custom_mw.AuditMiddleware(queries))
+			r.Use(custom_mw.RLSMiddleware(conn))
+			r.Use(custom_mw.AuditMiddleware(asynqClient))
 
 			r.Route("/users", func(r chi.Router) {
 				r.Post("/add", userHandler.AddUser)
@@ -232,6 +258,11 @@ func main() {
 			r.Route("/audit-logs", func(r chi.Router) {
 				r.Get("/", auditLogHandler.ListAuditLogs)
 				r.Get("/{id}", auditLogHandler.GetAuditLog)
+			})
+
+			r.Route("/ews", func(r chi.Router) {
+				r.Get("/at-risk", studentRiskHandler.ListAtRiskStudents)
+				r.Post("/calculate", studentRiskHandler.TriggerRiskCalculation)
 			})
 
 			r.Route("/badges", func(r chi.Router) {
@@ -427,6 +458,8 @@ func main() {
 			r.Route("/timetables", func(r chi.Router) {
 				r.Get("/", timetableHandler.GetTimetables)
 				r.Post("/", timetableHandler.CreateTimetable)
+				r.Post("/generate", timetableHandler.GenerateTimetable)
+				r.Get("/entries", timetableHandler.GetTimetableEntries)
 			})
 			r.Route("/transcripts", func(r chi.Router) {
 				r.Get("/", transcriptHandler.GetTranscripts)

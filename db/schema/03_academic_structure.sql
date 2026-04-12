@@ -8,6 +8,7 @@ CREATE TABLE departments (
   deputy_head_of_department_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
   created_at                   TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at                   TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at                   TIMESTAMPTZ(6),
   UNIQUE(school_id, department_name)
 );
 
@@ -20,6 +21,7 @@ CREATE TABLE rooms (
   department_id UUID REFERENCES departments(department_id) ON DELETE SET NULL,
   created_at    TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at    TIMESTAMPTZ(6),
   UNIQUE(school_id, room_name)
 );
 
@@ -33,6 +35,7 @@ CREATE TABLE subjects (
   max_online_percentage  DECIMAL(5, 2),
   created_at             TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at             TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at             TIMESTAMPTZ(6),
   UNIQUE(school_id, subject_name)
 );
 
@@ -48,6 +51,7 @@ CREATE TABLE courses (
   requires_all_units_passed BOOLEAN NOT NULL DEFAULT FALSE,
   created_at                TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at                TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at                TIMESTAMPTZ(6),
   UNIQUE(school_id, course_code)
 );
 
@@ -63,7 +67,8 @@ CREATE TABLE academic_classes (
   end_date              DATE,
   attendance_priority   TEXT NOT NULL DEFAULT 'normal',
   created_at            TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at            TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at            TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at            TIMESTAMPTZ(6)
 );
 
 -- Many-to-Many Relationships
@@ -98,5 +103,6 @@ CREATE TABLE class_representatives (
   can_communicate_teacher         BOOLEAN NOT NULL DEFAULT FALSE,
   can_communicate_department_head BOOLEAN NOT NULL DEFAULT FALSE,
   created_at                      TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at                      TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at                      TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at                      TIMESTAMPTZ(6)
 );

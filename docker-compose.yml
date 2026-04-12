@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: eportal_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-eportal}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    container_name: eportal_backend
+    depends_on:
+      - db
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-eportal}?sslmode=disable
+      REDIS_URL: redis:6379
+      PORT: 8080
+      FIREBASE_CREDENTIALS_PATH: /app/firebase-credentials.json
+    volumes:
+      - ./firebase-credentials.json:/app/firebase-credentials.json:ro
+
+  redis:
+    image: redis:alpine
+    container_name: eportal_redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:

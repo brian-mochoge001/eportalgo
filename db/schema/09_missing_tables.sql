@@ -12,7 +12,8 @@ CREATE TABLE events (
   organizer_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
   is_public   BOOLEAN NOT NULL DEFAULT TRUE,
   created_at  TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at  TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at  TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at  TIMESTAMPTZ(6)
 );
 
 CREATE TABLE meetings (
@@ -26,7 +27,8 @@ CREATE TABLE meetings (
   meeting_type     TEXT NOT NULL,
   organizer_id     UUID REFERENCES users(user_id) ON DELETE SET NULL,
   created_at       TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at       TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at       TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at       TIMESTAMPTZ(6)
 );
 
 CREATE TABLE meeting_attendees (
@@ -48,7 +50,8 @@ CREATE TABLE online_class_sessions (
   description     TEXT,
   recording_link  TEXT,
   created_at      TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at      TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at      TIMESTAMPTZ(6)
 );
 
 CREATE TABLE external_certifications (
@@ -62,7 +65,8 @@ CREATE TABLE external_certifications (
   expiry_date      DATE,
   is_verified      BOOLEAN NOT NULL DEFAULT FALSE,
   created_at       TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at       TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at       TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at       TIMESTAMPTZ(6)
 );
 
 CREATE TABLE quiz_submissions (
@@ -72,7 +76,8 @@ CREATE TABLE quiz_submissions (
   score         DECIMAL(5, 2),
   submitted_at  TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   status        TEXT NOT NULL DEFAULT 'completed',
-  UNIQUE(quiz_id, student_id)
+  UNIQUE(quiz_id, student_id),
+  deleted_at      TIMESTAMPTZ(6)
 );
 
 CREATE TABLE quiz_answers (
@@ -82,7 +87,8 @@ CREATE TABLE quiz_answers (
   student_answer_text TEXT,
   selected_option_id  UUID REFERENCES options(option_id) ON DELETE SET NULL,
   is_correct          BOOLEAN,
-  UNIQUE(quiz_submission_id, question_id)
+  UNIQUE(quiz_submission_id, question_id),
+  deleted_at      TIMESTAMPTZ(6)
 );
 
 CREATE TABLE short_course_grades (
@@ -95,7 +101,8 @@ CREATE TABLE short_course_grades (
   graded_by_user_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
   graded_at         TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_at        TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at        TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at        TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at      TIMESTAMPTZ(6)
 );
 
 CREATE TABLE student_course_progress (
@@ -103,7 +110,8 @@ CREATE TABLE student_course_progress (
   enrollment_id       UUID UNIQUE NOT NULL REFERENCES enrollments(enrollment_id) ON DELETE CASCADE,
   progress_percentage DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
   last_activity_at    TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at          TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at          TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at      TIMESTAMPTZ(6)
 );
 
 CREATE TABLE transcripts (
@@ -116,7 +124,8 @@ CREATE TABLE transcripts (
   issued_at         TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   issued_by_user_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
   created_at        TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at        TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at        TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at      TIMESTAMPTZ(6)
 );
 
 CREATE TABLE teacher_availability (
@@ -128,7 +137,8 @@ CREATE TABLE teacher_availability (
   is_recurring    BOOLEAN NOT NULL DEFAULT TRUE,
   notes           TEXT,
   created_at      TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at      TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at      TIMESTAMPTZ(6)
 );
 
 CREATE TABLE teacher_workloads (
@@ -137,7 +147,8 @@ CREATE TABLE teacher_workloads (
   max_hours_per_week     DECIMAL(5, 2) NOT NULL,
   current_hours_per_week DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
   created_at             TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at             TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at             TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at      TIMESTAMPTZ(6)
 );
 
 CREATE TABLE timetables (
@@ -149,5 +160,6 @@ CREATE TABLE timetables (
   description   TEXT,
   is_active     BOOLEAN NOT NULL DEFAULT TRUE,
   created_at    TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at    TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at    TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at      TIMESTAMPTZ(6)
 );

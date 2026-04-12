@@ -192,6 +192,49 @@ func (ns NullOnlineExamStatus) Value() (driver.Value, error) {
 	return string(ns.OnlineExamStatus), nil
 }
 
+type RiskLevel string
+
+const (
+	RiskLevelLow    RiskLevel = "Low"
+	RiskLevelMedium RiskLevel = "Medium"
+	RiskLevelHigh   RiskLevel = "High"
+)
+
+func (e *RiskLevel) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = RiskLevel(s)
+	case string:
+		*e = RiskLevel(s)
+	default:
+		return fmt.Errorf("unsupported scan type for RiskLevel: %T", src)
+	}
+	return nil
+}
+
+type NullRiskLevel struct {
+	RiskLevel RiskLevel
+	Valid     bool // Valid is true if RiskLevel is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullRiskLevel) Scan(value interface{}) error {
+	if value == nil {
+		ns.RiskLevel, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.RiskLevel.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullRiskLevel) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.RiskLevel), nil
+}
+
 type RoomType string
 
 const (
@@ -250,6 +293,7 @@ type AcademicClass struct {
 	AttendancePriority string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	DeletedAt          sql.NullTime
 }
 
 type Application struct {
@@ -312,19 +356,20 @@ type AttendanceRecord struct {
 }
 
 type AuditLog struct {
-	LogID      uuid.UUID
-	SchoolID   uuid.NullUUID
-	UserID     uuid.NullUUID
-	Action     string
-	EntityType string
-	EntityID   uuid.NullUUID
-	OldValue   pqtype.NullRawMessage
-	NewValue   pqtype.NullRawMessage
-	IpAddress  sql.NullString
-	UserAgent  sql.NullString
-	LoggedAt   time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	LogID        uuid.UUID
+	SchoolID     uuid.NullUUID
+	UserID       uuid.NullUUID
+	Action       string
+	EntityType   string
+	EntityID     uuid.NullUUID
+	OldValue     pqtype.NullRawMessage
+	NewValue     pqtype.NullRawMessage
+	IpAddress    sql.NullString
+	UserAgent    sql.NullString
+	LoggedAt     time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	SearchVector interface{}
 }
 
 type Badge struct {
@@ -419,6 +464,7 @@ type ClassRepresentative struct {
 	CanCommunicateDepartmentHead bool
 	CreatedAt                    time.Time
 	UpdatedAt                    time.Time
+	DeletedAt                    sql.NullTime
 }
 
 type ClinicVisit struct {
@@ -447,6 +493,7 @@ type Course struct {
 	RequiresAllUnitsPassed bool
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+	DeletedAt              sql.NullTime
 }
 
 type CourseSubject struct {
@@ -462,6 +509,7 @@ type Department struct {
 	DeputyHeadOfDepartmentID uuid.NullUUID
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
+	DeletedAt                sql.NullTime
 }
 
 type DepartmentSubject struct {
@@ -493,6 +541,7 @@ type Event struct {
 	IsPublic    bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	DeletedAt   sql.NullTime
 }
 
 type Exam struct {
@@ -525,6 +574,7 @@ type ExternalCertification struct {
 	IsVerified      bool
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	DeletedAt       sql.NullTime
 }
 
 type FeeStructure struct {
@@ -552,6 +602,7 @@ type Feedback struct {
 	SubmittedAt  time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	DeletedAt    sql.NullTime
 }
 
 type Grade struct {
@@ -716,6 +767,7 @@ type LessonPlan struct {
 	DateCovered         sql.NullTime
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+	DeletedAt           sql.NullTime
 }
 
 type LessonPlanLearningMaterial struct {
@@ -760,6 +812,7 @@ type Meeting struct {
 	OrganizerID     uuid.NullUUID
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	DeletedAt       sql.NullTime
 }
 
 type MeetingAttendee struct {
@@ -778,6 +831,7 @@ type Newsletter struct {
 	Attachments   pqtype.NullRawMessage
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	DeletedAt     sql.NullTime
 }
 
 type Notification struct {
@@ -815,6 +869,7 @@ type OnlineClassSession struct {
 	RecordingLink sql.NullString
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	DeletedAt     sql.NullTime
 }
 
 type Option struct {
@@ -897,6 +952,7 @@ type QuizAnswer struct {
 	StudentAnswerText sql.NullString
 	SelectedOptionID  uuid.NullUUID
 	IsCorrect         sql.NullBool
+	DeletedAt         sql.NullTime
 }
 
 type QuizSubmission struct {
@@ -906,6 +962,7 @@ type QuizSubmission struct {
 	Score        sql.NullString
 	SubmittedAt  time.Time
 	Status       string
+	DeletedAt    sql.NullTime
 }
 
 type Role struct {
@@ -924,6 +981,7 @@ type Room struct {
 	DepartmentID uuid.NullUUID
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	DeletedAt    sql.NullTime
 }
 
 type SaasCompanyProfile struct {
@@ -951,6 +1009,7 @@ type School struct {
 	SecondaryColor sql.NullString
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DeletedAt      sql.NullTime
 }
 
 type SchoolSetting struct {
@@ -1019,6 +1078,7 @@ type ShortCourseGrade struct {
 	GradedAt       time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DeletedAt      sql.NullTime
 }
 
 type StudentBadge struct {
@@ -1039,6 +1099,7 @@ type StudentCourseProgress struct {
 	ProgressPercentage string
 	LastActivityAt     time.Time
 	UpdatedAt          time.Time
+	DeletedAt          sql.NullTime
 }
 
 type StudentFee struct {
@@ -1067,6 +1128,19 @@ type StudentProfile struct {
 	UpdatedAt         time.Time
 }
 
+type StudentRiskScore struct {
+	RiskScoreID    uuid.UUID
+	SchoolID       uuid.UUID
+	StudentID      uuid.UUID
+	AttendanceRate string
+	AverageGrade   string
+	RiskScore      int32
+	RiskLevel      RiskLevel
+	LastCalculated time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type Subject struct {
 	SubjectID            uuid.UUID
 	SchoolID             uuid.UUID
@@ -1077,6 +1151,7 @@ type Subject struct {
 	MaxOnlinePercentage  sql.NullString
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	DeletedAt            sql.NullTime
 }
 
 type Submission struct {
@@ -1112,6 +1187,7 @@ type TeacherAvailability struct {
 	Notes          sql.NullString
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DeletedAt      sql.NullTime
 }
 
 type TeacherProfile struct {
@@ -1142,6 +1218,7 @@ type TeacherWorkload struct {
 	CurrentHoursPerWeek string
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+	DeletedAt           sql.NullTime
 }
 
 type Timetable struct {
@@ -1154,6 +1231,21 @@ type Timetable struct {
 	IsActive     bool
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	DeletedAt    sql.NullTime
+}
+
+type TimetableEntry struct {
+	EntryID     uuid.UUID
+	TimetableID uuid.UUID
+	ClassID     uuid.UUID
+	SubjectID   uuid.UUID
+	TeacherID   uuid.UUID
+	RoomID      uuid.UUID
+	DayOfWeek   int32
+	StartTime   time.Time
+	EndTime     time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 type Transaction struct {
@@ -1181,6 +1273,7 @@ type Transcript struct {
 	IssuedByUserID uuid.NullUUID
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DeletedAt      sql.NullTime
 }
 
 type TransferRequest struct {
@@ -1258,4 +1351,6 @@ type User struct {
 	IsActive          bool
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	DeletedAt         sql.NullTime
+	SearchVector      interface{}
 }

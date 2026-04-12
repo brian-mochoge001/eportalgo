@@ -135,6 +135,63 @@ func (q *Queries) AwardBadge(ctx context.Context, arg AwardBadgeParams) (Student
 	return i, err
 }
 
+const calculateStudentMetrics = `-- name: CalculateStudentMetrics :many
+SELECT
+    sp.user_id,
+    sp.school_id,
+    COALESCE(
+        (SELECT (COUNT(CASE WHEN ar.status = 'Present' THEN 1 END)::DECIMAL / NULLIF(COUNT(*), 0)) * 100
+         FROM attendance_records ar
+         WHERE ar.student_id = sp.user_id),
+        100.00
+    )::DECIMAL(5,2) as attendance_rate,
+    COALESCE(
+        (SELECT AVG(g.score)
+         FROM grades g
+         JOIN submissions s ON g.submission_id = s.submission_id
+         WHERE s.student_id = sp.user_id),
+        0.00
+    )::DECIMAL(5,2) as average_grade
+FROM student_profiles sp
+WHERE sp.school_id = $1
+`
+
+type CalculateStudentMetricsRow struct {
+	UserID         uuid.UUID
+	SchoolID       uuid.UUID
+	AttendanceRate string
+	AverageGrade   string
+}
+
+// Early Warning System
+func (q *Queries) CalculateStudentMetrics(ctx context.Context, schoolID uuid.UUID) ([]CalculateStudentMetricsRow, error) {
+	rows, err := q.db.QueryContext(ctx, calculateStudentMetrics, schoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CalculateStudentMetricsRow
+	for rows.Next() {
+		var i CalculateStudentMetricsRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.SchoolID,
+			&i.AttendanceRate,
+			&i.AverageGrade,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const checkShortCourseEnrollment = `-- name: CheckShortCourseEnrollment :one
 SELECT enrollment_id, school_id, student_id, course_id, enrollment_date, status, attempt_type, previous_enrollment_id, created_at, updated_at FROM short_course_enrollments
 WHERE student_id = $1 AND course_id = $2 LIMIT 1
@@ -180,7 +237,7 @@ INSERT INTO academic_classes (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING class_id, school_id, course_id, teacher_id, class_name, academic_year, semester, start_date, end_date, attendance_priority, created_at, updated_at
+RETURNING class_id, school_id, course_id, teacher_id, class_name, academic_year, semester, start_date, end_date, attendance_priority, created_at, updated_at, deleted_at
 `
 
 type CreateAcademicClassParams struct {
@@ -219,6 +276,7 @@ func (q *Queries) CreateAcademicClass(ctx context.Context, arg CreateAcademicCla
 		&i.AttendancePriority,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -326,7 +384,7 @@ INSERT INTO audit_logs (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9
 )
-RETURNING log_id, school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent, logged_at, created_at, updated_at
+RETURNING log_id, school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent, logged_at, created_at, updated_at, search_vector
 `
 
 type CreateAuditLogParams struct {
@@ -369,6 +427,7 @@ func (q *Queries) CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) 
 		&i.LoggedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SearchVector,
 	)
 	return i, err
 }
@@ -545,7 +604,7 @@ INSERT INTO class_representatives (
 ) VALUES (
   $1, $2, $3, $4
 )
-RETURNING class_rep_id, student_user_id, academic_class_id, can_communicate_teacher, can_communicate_department_head, created_at, updated_at
+RETURNING class_rep_id, student_user_id, academic_class_id, can_communicate_teacher, can_communicate_department_head, created_at, updated_at, deleted_at
 `
 
 type CreateClassRepresentativeParams struct {
@@ -572,6 +631,7 @@ func (q *Queries) CreateClassRepresentative(ctx context.Context, arg CreateClass
 		&i.CanCommunicateDepartmentHead,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -582,7 +642,7 @@ INSERT INTO courses (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING course_id, school_id, course_code, course_name, description, is_short_course, price, is_graded_independently, requires_all_units_passed, created_at, updated_at
+RETURNING course_id, school_id, course_code, course_name, description, is_short_course, price, is_graded_independently, requires_all_units_passed, created_at, updated_at, deleted_at
 `
 
 type CreateCourseParams struct {
@@ -620,6 +680,7 @@ func (q *Queries) CreateCourse(ctx context.Context, arg CreateCourseParams) (Cou
 		&i.RequiresAllUnitsPassed,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -630,7 +691,7 @@ INSERT INTO departments (
 ) VALUES (
   $1, $2, $3, $4
 )
-RETURNING department_id, school_id, department_name, head_of_department_id, deputy_head_of_department_id, created_at, updated_at
+RETURNING department_id, school_id, department_name, head_of_department_id, deputy_head_of_department_id, created_at, updated_at, deleted_at
 `
 
 type CreateDepartmentParams struct {
@@ -656,6 +717,7 @@ func (q *Queries) CreateDepartment(ctx context.Context, arg CreateDepartmentPara
 		&i.DeputyHeadOfDepartmentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -705,7 +767,7 @@ INSERT INTO events (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9
 )
-RETURNING event_id, school_id, title, description, event_date, end_date, location, event_type, organizer_id, is_public, created_at, updated_at
+RETURNING event_id, school_id, title, description, event_date, end_date, location, event_type, organizer_id, is_public, created_at, updated_at, deleted_at
 `
 
 type CreateEventParams struct {
@@ -747,6 +809,7 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (Event
 		&i.IsPublic,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -757,7 +820,7 @@ INSERT INTO external_certifications (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING cert_id, student_id, name, issuer, credential_id, verification_url, issue_date, expiry_date, is_verified, created_at, updated_at
+RETURNING cert_id, student_id, name, issuer, credential_id, verification_url, issue_date, expiry_date, is_verified, created_at, updated_at, deleted_at
 `
 
 type CreateExternalCertificationParams struct {
@@ -796,6 +859,7 @@ func (q *Queries) CreateExternalCertification(ctx context.Context, arg CreateExt
 		&i.IsVerified,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -851,7 +915,7 @@ INSERT INTO feedback (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, 'New', CURRENT_TIMESTAMP
 )
-RETURNING feedback_id, school_id, user_id, subject, message, rating, feedback_type, status, submitted_at, created_at, updated_at
+RETURNING feedback_id, school_id, user_id, subject, message, rating, feedback_type, status, submitted_at, created_at, updated_at, deleted_at
 `
 
 type CreateFeedbackParams struct {
@@ -886,6 +950,7 @@ func (q *Queries) CreateFeedback(ctx context.Context, arg CreateFeedbackParams) 
 		&i.SubmittedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1031,7 +1096,7 @@ INSERT INTO lesson_plans (
 ) VALUES (
   $1, $2, $3, $4, $5, $6
 )
-RETURNING lesson_plan_id, school_id, teacher_id, class_id, subject_id, title, topic, lesson_number, objectives, content, assessment_questions, online_meeting_link, date_covered, created_at, updated_at
+RETURNING lesson_plan_id, school_id, teacher_id, class_id, subject_id, title, topic, lesson_number, objectives, content, assessment_questions, online_meeting_link, date_covered, created_at, updated_at, deleted_at
 `
 
 type CreateLessonPlanParams struct {
@@ -1070,6 +1135,7 @@ func (q *Queries) CreateLessonPlan(ctx context.Context, arg CreateLessonPlanPara
 		&i.DateCovered,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1080,7 +1146,7 @@ INSERT INTO meetings (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING meeting_id, school_id, title, agenda, meeting_date, duration_minutes, location, meeting_type, organizer_id, created_at, updated_at
+RETURNING meeting_id, school_id, title, agenda, meeting_date, duration_minutes, location, meeting_type, organizer_id, created_at, updated_at, deleted_at
 `
 
 type CreateMeetingParams struct {
@@ -1119,6 +1185,7 @@ func (q *Queries) CreateMeeting(ctx context.Context, arg CreateMeetingParams) (M
 		&i.OrganizerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1129,7 +1196,7 @@ INSERT INTO newsletters (
 ) VALUES (
   $1, $2, $3, $4
 )
-RETURNING newsletter_id, title, content, sent_at, sent_by_user_id, target_schools, attachments, created_at, updated_at
+RETURNING newsletter_id, title, content, sent_at, sent_by_user_id, target_schools, attachments, created_at, updated_at, deleted_at
 `
 
 type CreateNewsletterParams struct {
@@ -1158,6 +1225,7 @@ func (q *Queries) CreateNewsletter(ctx context.Context, arg CreateNewsletterPara
 		&i.Attachments,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1258,7 +1326,7 @@ INSERT INTO online_class_sessions (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9
 )
-RETURNING session_id, school_id, class_id, teacher_id, session_title, start_time, end_time, meeting_link, description, recording_link, created_at, updated_at
+RETURNING session_id, school_id, class_id, teacher_id, session_title, start_time, end_time, meeting_link, description, recording_link, created_at, updated_at, deleted_at
 `
 
 type CreateOnlineClassSessionParams struct {
@@ -1300,6 +1368,7 @@ func (q *Queries) CreateOnlineClassSession(ctx context.Context, arg CreateOnline
 		&i.RecordingLink,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1524,7 +1593,7 @@ INSERT INTO quiz_answers (
 ) VALUES (
   $1, $2, $3, $4, $5
 )
-RETURNING answer_id, quiz_submission_id, question_id, student_answer_text, selected_option_id, is_correct
+RETURNING answer_id, quiz_submission_id, question_id, student_answer_text, selected_option_id, is_correct, deleted_at
 `
 
 type CreateQuizAnswerParams struct {
@@ -1551,6 +1620,7 @@ func (q *Queries) CreateQuizAnswer(ctx context.Context, arg CreateQuizAnswerPara
 		&i.StudentAnswerText,
 		&i.SelectedOptionID,
 		&i.IsCorrect,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1561,7 +1631,7 @@ INSERT INTO quiz_submissions (
 ) VALUES (
   $1, $2, $3, $4
 )
-RETURNING submission_id, quiz_id, student_id, score, submitted_at, status
+RETURNING submission_id, quiz_id, student_id, score, submitted_at, status, deleted_at
 `
 
 type CreateQuizSubmissionParams struct {
@@ -1587,6 +1657,7 @@ func (q *Queries) CreateQuizSubmission(ctx context.Context, arg CreateQuizSubmis
 		&i.Score,
 		&i.SubmittedAt,
 		&i.Status,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1597,7 +1668,7 @@ INSERT INTO rooms (
 ) VALUES (
   $1, $2, $3, $4, $5
 )
-RETURNING room_id, school_id, room_name, capacity, room_type, department_id, created_at, updated_at
+RETURNING room_id, school_id, room_name, capacity, room_type, department_id, created_at, updated_at, deleted_at
 `
 
 type CreateRoomParams struct {
@@ -1627,6 +1698,7 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) (Room, e
 		&i.DepartmentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1637,7 +1709,7 @@ INSERT INTO schools (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 )
-RETURNING school_id, school_name, subdomain, status, school_initial, address, phone_number, email, logo_url, primary_color, secondary_color, created_at, updated_at
+RETURNING school_id, school_name, subdomain, status, school_initial, address, phone_number, email, logo_url, primary_color, secondary_color, created_at, updated_at, deleted_at
 `
 
 type CreateSchoolParams struct {
@@ -1681,6 +1753,7 @@ func (q *Queries) CreateSchool(ctx context.Context, arg CreateSchoolParams) (Sch
 		&i.SecondaryColor,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1716,7 +1789,7 @@ INSERT INTO student_course_progress (
 ) VALUES (
   $1, $2
 )
-RETURNING progress_id, enrollment_id, progress_percentage, last_activity_at, updated_at
+RETURNING progress_id, enrollment_id, progress_percentage, last_activity_at, updated_at, deleted_at
 `
 
 type CreateStudentCourseProgressParams struct {
@@ -1734,6 +1807,7 @@ func (q *Queries) CreateStudentCourseProgress(ctx context.Context, arg CreateStu
 		&i.ProgressPercentage,
 		&i.LastActivityAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1831,7 +1905,7 @@ INSERT INTO subjects (
 ) VALUES (
   $1, $2, $3, $4, $5, $6
 )
-RETURNING subject_id, school_id, subject_name, description, double_period_required, lab_period_required, max_online_percentage, created_at, updated_at
+RETURNING subject_id, school_id, subject_name, description, double_period_required, lab_period_required, max_online_percentage, created_at, updated_at, deleted_at
 `
 
 type CreateSubjectParams struct {
@@ -1863,6 +1937,7 @@ func (q *Queries) CreateSubject(ctx context.Context, arg CreateSubjectParams) (S
 		&i.MaxOnlinePercentage,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1914,7 +1989,7 @@ INSERT INTO teacher_availability (
 ) VALUES (
   $1, $2, $3, $4, $5, $6
 )
-RETURNING availability_id, teacher_id, day_of_week, start_time, end_time, is_recurring, notes, created_at, updated_at
+RETURNING availability_id, teacher_id, day_of_week, start_time, end_time, is_recurring, notes, created_at, updated_at, deleted_at
 `
 
 type CreateTeacherAvailabilityParams struct {
@@ -1947,6 +2022,7 @@ func (q *Queries) CreateTeacherAvailability(ctx context.Context, arg CreateTeach
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1957,7 +2033,7 @@ INSERT INTO teacher_workloads (
 ) VALUES (
   $1, $2, $3
 )
-RETURNING workload_id, teacher_id, max_hours_per_week, current_hours_per_week, created_at, updated_at
+RETURNING workload_id, teacher_id, max_hours_per_week, current_hours_per_week, created_at, updated_at, deleted_at
 `
 
 type CreateTeacherWorkloadParams struct {
@@ -1977,6 +2053,7 @@ func (q *Queries) CreateTeacherWorkload(ctx context.Context, arg CreateTeacherWo
 		&i.CurrentHoursPerWeek,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -1987,7 +2064,7 @@ INSERT INTO timetables (
 ) VALUES (
   $1, $2, $3, $4, $5, $6
 )
-RETURNING timetable_id, school_id, academic_year, semester, title, description, is_active, created_at, updated_at
+RETURNING timetable_id, school_id, academic_year, semester, title, description, is_active, created_at, updated_at, deleted_at
 `
 
 type CreateTimetableParams struct {
@@ -2019,6 +2096,55 @@ func (q *Queries) CreateTimetable(ctx context.Context, arg CreateTimetableParams
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const createTimetableEntry = `-- name: CreateTimetableEntry :one
+INSERT INTO timetable_entries (
+  timetable_id, class_id, subject_id, teacher_id, room_id, day_of_week, start_time, end_time
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8
+)
+RETURNING entry_id, timetable_id, class_id, subject_id, teacher_id, room_id, day_of_week, start_time, end_time, created_at, updated_at
+`
+
+type CreateTimetableEntryParams struct {
+	TimetableID uuid.UUID
+	ClassID     uuid.UUID
+	SubjectID   uuid.UUID
+	TeacherID   uuid.UUID
+	RoomID      uuid.UUID
+	DayOfWeek   int32
+	StartTime   time.Time
+	EndTime     time.Time
+}
+
+func (q *Queries) CreateTimetableEntry(ctx context.Context, arg CreateTimetableEntryParams) (TimetableEntry, error) {
+	row := q.db.QueryRowContext(ctx, createTimetableEntry,
+		arg.TimetableID,
+		arg.ClassID,
+		arg.SubjectID,
+		arg.TeacherID,
+		arg.RoomID,
+		arg.DayOfWeek,
+		arg.StartTime,
+		arg.EndTime,
+	)
+	var i TimetableEntry
+	err := row.Scan(
+		&i.EntryID,
+		&i.TimetableID,
+		&i.ClassID,
+		&i.SubjectID,
+		&i.TeacherID,
+		&i.RoomID,
+		&i.DayOfWeek,
+		&i.StartTime,
+		&i.EndTime,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2029,7 +2155,7 @@ INSERT INTO transcripts (
 ) VALUES (
   $1, $2, $3, $4, $5, $6
 )
-RETURNING transcript_id, school_id, student_id, academic_year, cumulative_gpa, transcript_data, issued_at, issued_by_user_id, created_at, updated_at
+RETURNING transcript_id, school_id, student_id, academic_year, cumulative_gpa, transcript_data, issued_at, issued_by_user_id, created_at, updated_at, deleted_at
 `
 
 type CreateTranscriptParams struct {
@@ -2063,6 +2189,7 @@ func (q *Queries) CreateTranscript(ctx context.Context, arg CreateTranscriptPara
 		&i.IssuedByUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -2119,7 +2246,7 @@ INSERT INTO users (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
 )
-RETURNING user_id, school_id, role_id, first_name, last_name, email, contact_email, firebase_uid, password_hash, phone_number, date_of_birth, gender, profile_picture_url, is_active, created_at, updated_at
+RETURNING user_id, school_id, role_id, first_name, last_name, email, contact_email, firebase_uid, password_hash, phone_number, date_of_birth, gender, profile_picture_url, is_active, created_at, updated_at, deleted_at, search_vector
 `
 
 type CreateUserParams struct {
@@ -2168,6 +2295,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.SearchVector,
 	)
 	return i, err
 }
@@ -2443,6 +2572,16 @@ func (q *Queries) DeleteTeacherWorkload(ctx context.Context, workloadID uuid.UUI
 	return err
 }
 
+const deleteTimetableEntriesByTimetable = `-- name: DeleteTimetableEntriesByTimetable :exec
+DELETE FROM timetable_entries
+WHERE timetable_id = $1
+`
+
+func (q *Queries) DeleteTimetableEntriesByTimetable(ctx context.Context, timetableID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteTimetableEntriesByTimetable, timetableID)
+	return err
+}
+
 const deleteTranscript = `-- name: DeleteTranscript :exec
 DELETE FROM transcripts
 WHERE transcript_id = $1 AND school_id = $2
@@ -2692,7 +2831,7 @@ func (q *Queries) GetAttendanceRecordByUnique(ctx context.Context, arg GetAttend
 }
 
 const getAuditLog = `-- name: GetAuditLog :one
-SELECT al.log_id, al.school_id, al.user_id, al.action, al.entity_type, al.entity_id, al.old_value, al.new_value, al.ip_address, al.user_agent, al.logged_at, al.created_at, al.updated_at, u.first_name, u.last_name, u.email, s.school_name
+SELECT al.log_id, al.school_id, al.user_id, al.action, al.entity_type, al.entity_id, al.old_value, al.new_value, al.ip_address, al.user_agent, al.logged_at, al.created_at, al.updated_at, al.search_vector, u.first_name, u.last_name, u.email, s.school_name
 FROM audit_logs al
 LEFT JOIN users u ON al.user_id = u.user_id
 LEFT JOIN schools s ON al.school_id = s.school_id
@@ -2700,23 +2839,24 @@ WHERE al.log_id = $1 LIMIT 1
 `
 
 type GetAuditLogRow struct {
-	LogID      uuid.UUID
-	SchoolID   uuid.NullUUID
-	UserID     uuid.NullUUID
-	Action     string
-	EntityType string
-	EntityID   uuid.NullUUID
-	OldValue   pqtype.NullRawMessage
-	NewValue   pqtype.NullRawMessage
-	IpAddress  sql.NullString
-	UserAgent  sql.NullString
-	LoggedAt   time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	FirstName  sql.NullString
-	LastName   sql.NullString
-	Email      sql.NullString
-	SchoolName sql.NullString
+	LogID        uuid.UUID
+	SchoolID     uuid.NullUUID
+	UserID       uuid.NullUUID
+	Action       string
+	EntityType   string
+	EntityID     uuid.NullUUID
+	OldValue     pqtype.NullRawMessage
+	NewValue     pqtype.NullRawMessage
+	IpAddress    sql.NullString
+	UserAgent    sql.NullString
+	LoggedAt     time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	SearchVector interface{}
+	FirstName    sql.NullString
+	LastName     sql.NullString
+	Email        sql.NullString
+	SchoolName   sql.NullString
 }
 
 // Audit Logs: GetAuditLog
@@ -2737,6 +2877,7 @@ func (q *Queries) GetAuditLog(ctx context.Context, logID uuid.UUID) (GetAuditLog
 		&i.LoggedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SearchVector,
 		&i.FirstName,
 		&i.LastName,
 		&i.Email,
@@ -3065,7 +3206,7 @@ func (q *Queries) GetChatRoomsByUser(ctx context.Context, userID uuid.UUID) ([]C
 }
 
 const getClassByID = `-- name: GetClassByID :one
-SELECT class_id, school_id, course_id, teacher_id, class_name, academic_year, semester, start_date, end_date, attendance_priority, created_at, updated_at FROM academic_classes
+SELECT class_id, school_id, course_id, teacher_id, class_name, academic_year, semester, start_date, end_date, attendance_priority, created_at, updated_at, deleted_at FROM academic_classes
 WHERE class_id = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -3090,12 +3231,13 @@ func (q *Queries) GetClassByID(ctx context.Context, arg GetClassByIDParams) (Aca
 		&i.AttendancePriority,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getClassRepresentativeByID = `-- name: GetClassRepresentativeByID :one
-SELECT cr.class_rep_id, cr.student_user_id, cr.academic_class_id, cr.can_communicate_teacher, cr.can_communicate_department_head, cr.created_at, cr.updated_at, u.first_name, u.last_name, u.email, ac.class_name, ac.school_id
+SELECT cr.class_rep_id, cr.student_user_id, cr.academic_class_id, cr.can_communicate_teacher, cr.can_communicate_department_head, cr.created_at, cr.updated_at, cr.deleted_at, u.first_name, u.last_name, u.email, ac.class_name, ac.school_id
 FROM class_representatives cr
 JOIN users u ON cr.student_user_id = u.user_id
 JOIN academic_classes ac ON cr.academic_class_id = ac.class_id
@@ -3110,6 +3252,7 @@ type GetClassRepresentativeByIDRow struct {
 	CanCommunicateDepartmentHead bool
 	CreatedAt                    time.Time
 	UpdatedAt                    time.Time
+	DeletedAt                    sql.NullTime
 	FirstName                    string
 	LastName                     string
 	Email                        string
@@ -3129,6 +3272,7 @@ func (q *Queries) GetClassRepresentativeByID(ctx context.Context, classRepID uui
 		&i.CanCommunicateDepartmentHead,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 		&i.FirstName,
 		&i.LastName,
 		&i.Email,
@@ -3139,7 +3283,7 @@ func (q *Queries) GetClassRepresentativeByID(ctx context.Context, classRepID uui
 }
 
 const getClassRepresentativesBySchool = `-- name: GetClassRepresentativesBySchool :many
-SELECT cr.class_rep_id, cr.student_user_id, cr.academic_class_id, cr.can_communicate_teacher, cr.can_communicate_department_head, cr.created_at, cr.updated_at, u.first_name, u.last_name, u.email, ac.class_name
+SELECT cr.class_rep_id, cr.student_user_id, cr.academic_class_id, cr.can_communicate_teacher, cr.can_communicate_department_head, cr.created_at, cr.updated_at, cr.deleted_at, u.first_name, u.last_name, u.email, ac.class_name
 FROM class_representatives cr
 JOIN users u ON cr.student_user_id = u.user_id
 JOIN academic_classes ac ON cr.academic_class_id = ac.class_id
@@ -3161,6 +3305,7 @@ type GetClassRepresentativesBySchoolRow struct {
 	CanCommunicateDepartmentHead bool
 	CreatedAt                    time.Time
 	UpdatedAt                    time.Time
+	DeletedAt                    sql.NullTime
 	FirstName                    string
 	LastName                     string
 	Email                        string
@@ -3184,6 +3329,7 @@ func (q *Queries) GetClassRepresentativesBySchool(ctx context.Context, arg GetCl
 			&i.CanCommunicateDepartmentHead,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.FirstName,
 			&i.LastName,
 			&i.Email,
@@ -3203,7 +3349,7 @@ func (q *Queries) GetClassRepresentativesBySchool(ctx context.Context, arg GetCl
 }
 
 const getClassWithDetails = `-- name: GetClassWithDetails :one
-SELECT ac.class_id, ac.school_id, ac.course_id, ac.teacher_id, ac.class_name, ac.academic_year, ac.semester, ac.start_date, ac.end_date, ac.attendance_priority, ac.created_at, ac.updated_at, t.user_id as teacher_user_id,
+SELECT ac.class_id, ac.school_id, ac.course_id, ac.teacher_id, ac.class_name, ac.academic_year, ac.semester, ac.start_date, ac.end_date, ac.attendance_priority, ac.created_at, ac.updated_at, ac.deleted_at, t.user_id as teacher_user_id,
        hod.user_id as head_of_department_id
 FROM academic_classes ac
 LEFT JOIN users t ON ac.teacher_id = t.user_id
@@ -3232,6 +3378,7 @@ type GetClassWithDetailsRow struct {
 	AttendancePriority string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	DeletedAt          sql.NullTime
 	TeacherUserID      uuid.NullUUID
 	HeadOfDepartmentID uuid.NullUUID
 }
@@ -3252,6 +3399,7 @@ func (q *Queries) GetClassWithDetails(ctx context.Context, arg GetClassWithDetai
 		&i.AttendancePriority,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 		&i.TeacherUserID,
 		&i.HeadOfDepartmentID,
 	)
@@ -3259,7 +3407,7 @@ func (q *Queries) GetClassWithDetails(ctx context.Context, arg GetClassWithDetai
 }
 
 const getClassesBySchool = `-- name: GetClassesBySchool :many
-SELECT c.class_id, c.school_id, c.course_id, c.teacher_id, c.class_name, c.academic_year, c.semester, c.start_date, c.end_date, c.attendance_priority, c.created_at, c.updated_at, t.first_name as teacher_first_name, t.last_name as teacher_last_name, co.course_name,
+SELECT c.class_id, c.school_id, c.course_id, c.teacher_id, c.class_name, c.academic_year, c.semester, c.start_date, c.end_date, c.attendance_priority, c.created_at, c.updated_at, c.deleted_at, t.first_name as teacher_first_name, t.last_name as teacher_last_name, co.course_name,
        (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = c.class_id) as enrollment_count
 FROM academic_classes c
 JOIN users t ON c.teacher_id = t.user_id
@@ -3280,6 +3428,7 @@ type GetClassesBySchoolRow struct {
 	AttendancePriority string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	DeletedAt          sql.NullTime
 	TeacherFirstName   string
 	TeacherLastName    string
 	CourseName         string
@@ -3309,6 +3458,7 @@ func (q *Queries) GetClassesBySchool(ctx context.Context, schoolID uuid.UUID) ([
 			&i.AttendancePriority,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.TeacherFirstName,
 			&i.TeacherLastName,
 			&i.CourseName,
@@ -3327,8 +3477,79 @@ func (q *Queries) GetClassesBySchool(ctx context.Context, schoolID uuid.UUID) ([
 	return items, nil
 }
 
+const getClassesForScheduling = `-- name: GetClassesForScheduling :many
+SELECT ac.class_id, ac.school_id, ac.course_id, ac.teacher_id, ac.class_name, ac.academic_year, ac.semester, ac.start_date, ac.end_date, ac.attendance_priority, ac.created_at, ac.updated_at, ac.deleted_at, c.course_name,
+       (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = ac.class_id) as enrollment_count
+FROM academic_classes ac
+JOIN courses c ON ac.course_id = c.course_id
+WHERE ac.school_id = $1 AND ac.academic_year = $2 AND (ac.semester = $3 OR ac.semester IS NULL)
+`
+
+type GetClassesForSchedulingParams struct {
+	SchoolID     uuid.UUID
+	AcademicYear string
+	Semester     sql.NullString
+}
+
+type GetClassesForSchedulingRow struct {
+	ClassID            uuid.UUID
+	SchoolID           uuid.UUID
+	CourseID           uuid.UUID
+	TeacherID          uuid.UUID
+	ClassName          string
+	AcademicYear       string
+	Semester           sql.NullString
+	StartDate          sql.NullTime
+	EndDate            sql.NullTime
+	AttendancePriority string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	DeletedAt          sql.NullTime
+	CourseName         string
+	EnrollmentCount    int64
+}
+
+func (q *Queries) GetClassesForScheduling(ctx context.Context, arg GetClassesForSchedulingParams) ([]GetClassesForSchedulingRow, error) {
+	rows, err := q.db.QueryContext(ctx, getClassesForScheduling, arg.SchoolID, arg.AcademicYear, arg.Semester)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetClassesForSchedulingRow
+	for rows.Next() {
+		var i GetClassesForSchedulingRow
+		if err := rows.Scan(
+			&i.ClassID,
+			&i.SchoolID,
+			&i.CourseID,
+			&i.TeacherID,
+			&i.ClassName,
+			&i.AcademicYear,
+			&i.Semester,
+			&i.StartDate,
+			&i.EndDate,
+			&i.AttendancePriority,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.CourseName,
+			&i.EnrollmentCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getCourseByID = `-- name: GetCourseByID :one
-SELECT course_id, school_id, course_code, course_name, description, is_short_course, price, is_graded_independently, requires_all_units_passed, created_at, updated_at FROM courses
+SELECT course_id, school_id, course_code, course_name, description, is_short_course, price, is_graded_independently, requires_all_units_passed, created_at, updated_at, deleted_at FROM courses
 WHERE course_id = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -3352,12 +3573,55 @@ func (q *Queries) GetCourseByID(ctx context.Context, arg GetCourseByIDParams) (C
 		&i.RequiresAllUnitsPassed,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
+const getCourseSubjects = `-- name: GetCourseSubjects :many
+SELECT s.subject_id, s.school_id, s.subject_name, s.description, s.double_period_required, s.lab_period_required, s.max_online_percentage, s.created_at, s.updated_at, s.deleted_at
+FROM subjects s
+JOIN course_subjects cs ON s.subject_id = cs.subject_id
+WHERE cs.course_id = $1
+`
+
+// Scheduling Engine Queries
+func (q *Queries) GetCourseSubjects(ctx context.Context, courseID uuid.UUID) ([]Subject, error) {
+	rows, err := q.db.QueryContext(ctx, getCourseSubjects, courseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Subject
+	for rows.Next() {
+		var i Subject
+		if err := rows.Scan(
+			&i.SubjectID,
+			&i.SchoolID,
+			&i.SubjectName,
+			&i.Description,
+			&i.DoublePeriodRequired,
+			&i.LabPeriodRequired,
+			&i.MaxOnlinePercentage,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getCoursesBySchool = `-- name: GetCoursesBySchool :many
-SELECT course_id, school_id, course_code, course_name, description, is_short_course, price, is_graded_independently, requires_all_units_passed, created_at, updated_at FROM courses
+SELECT course_id, school_id, course_code, course_name, description, is_short_course, price, is_graded_independently, requires_all_units_passed, created_at, updated_at, deleted_at FROM courses
 WHERE school_id = $1
 `
 
@@ -3383,6 +3647,7 @@ func (q *Queries) GetCoursesBySchool(ctx context.Context, schoolID uuid.UUID) ([
 			&i.RequiresAllUnitsPassed,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -3398,7 +3663,7 @@ func (q *Queries) GetCoursesBySchool(ctx context.Context, schoolID uuid.UUID) ([
 }
 
 const getDepartmentByID = `-- name: GetDepartmentByID :one
-SELECT department_id, school_id, department_name, head_of_department_id, deputy_head_of_department_id, created_at, updated_at FROM departments
+SELECT department_id, school_id, department_name, head_of_department_id, deputy_head_of_department_id, created_at, updated_at, deleted_at FROM departments
 WHERE department_id = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -3418,12 +3683,13 @@ func (q *Queries) GetDepartmentByID(ctx context.Context, arg GetDepartmentByIDPa
 		&i.DeputyHeadOfDepartmentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getDepartmentByName = `-- name: GetDepartmentByName :one
-SELECT department_id, school_id, department_name, head_of_department_id, deputy_head_of_department_id, created_at, updated_at FROM departments
+SELECT department_id, school_id, department_name, head_of_department_id, deputy_head_of_department_id, created_at, updated_at, deleted_at FROM departments
 WHERE school_id = $1 AND department_name = $2 LIMIT 1
 `
 
@@ -3443,12 +3709,13 @@ func (q *Queries) GetDepartmentByName(ctx context.Context, arg GetDepartmentByNa
 		&i.DeputyHeadOfDepartmentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getDepartmentsBySchool = `-- name: GetDepartmentsBySchool :many
-SELECT d.department_id, d.school_id, d.department_name, d.head_of_department_id, d.deputy_head_of_department_id, d.created_at, d.updated_at, u1.first_name as head_first_name, u1.last_name as head_last_name,
+SELECT d.department_id, d.school_id, d.department_name, d.head_of_department_id, d.deputy_head_of_department_id, d.created_at, d.updated_at, d.deleted_at, u1.first_name as head_first_name, u1.last_name as head_last_name,
        u2.first_name as deputy_first_name, u2.last_name as deputy_last_name
 FROM departments d
 LEFT JOIN users u1 ON d.head_of_department_id = u1.user_id
@@ -3465,6 +3732,7 @@ type GetDepartmentsBySchoolRow struct {
 	DeputyHeadOfDepartmentID uuid.NullUUID
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
+	DeletedAt                sql.NullTime
 	HeadFirstName            sql.NullString
 	HeadLastName             sql.NullString
 	DeputyFirstName          sql.NullString
@@ -3489,6 +3757,7 @@ func (q *Queries) GetDepartmentsBySchool(ctx context.Context, schoolID uuid.UUID
 			&i.DeputyHeadOfDepartmentID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.HeadFirstName,
 			&i.HeadLastName,
 			&i.DeputyFirstName,
@@ -3640,7 +3909,7 @@ func (q *Queries) GetEnrollmentsBySchool(ctx context.Context, schoolID uuid.UUID
 }
 
 const getEventByID = `-- name: GetEventByID :one
-SELECT event_id, school_id, title, description, event_date, end_date, location, event_type, organizer_id, is_public, created_at, updated_at FROM events
+SELECT event_id, school_id, title, description, event_date, end_date, location, event_type, organizer_id, is_public, created_at, updated_at, deleted_at FROM events
 WHERE event_id = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -3666,12 +3935,13 @@ func (q *Queries) GetEventByID(ctx context.Context, arg GetEventByIDParams) (Eve
 		&i.IsPublic,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getEventsBySchool = `-- name: GetEventsBySchool :many
-SELECT event_id, school_id, title, description, event_date, end_date, location, event_type, organizer_id, is_public, created_at, updated_at FROM events
+SELECT event_id, school_id, title, description, event_date, end_date, location, event_type, organizer_id, is_public, created_at, updated_at, deleted_at FROM events
 WHERE school_id = $1
 ORDER BY event_date ASC
 `
@@ -3698,6 +3968,7 @@ func (q *Queries) GetEventsBySchool(ctx context.Context, schoolID uuid.UUID) ([]
 			&i.IsPublic,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -3713,7 +3984,7 @@ func (q *Queries) GetEventsBySchool(ctx context.Context, schoolID uuid.UUID) ([]
 }
 
 const getExternalCertificationByID = `-- name: GetExternalCertificationByID :one
-SELECT cert_id, student_id, name, issuer, credential_id, verification_url, issue_date, expiry_date, is_verified, created_at, updated_at FROM external_certifications
+SELECT cert_id, student_id, name, issuer, credential_id, verification_url, issue_date, expiry_date, is_verified, created_at, updated_at, deleted_at FROM external_certifications
 WHERE cert_id = $1 LIMIT 1
 `
 
@@ -3733,12 +4004,13 @@ func (q *Queries) GetExternalCertificationByID(ctx context.Context, certID uuid.
 		&i.IsVerified,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getExternalCertifications = `-- name: GetExternalCertifications :many
-SELECT ec.cert_id, ec.student_id, ec.name, ec.issuer, ec.credential_id, ec.verification_url, ec.issue_date, ec.expiry_date, ec.is_verified, ec.created_at, ec.updated_at, u.first_name, u.last_name, u.email
+SELECT ec.cert_id, ec.student_id, ec.name, ec.issuer, ec.credential_id, ec.verification_url, ec.issue_date, ec.expiry_date, ec.is_verified, ec.created_at, ec.updated_at, ec.deleted_at, u.first_name, u.last_name, u.email
 FROM external_certifications ec
 JOIN users u ON ec.student_id = u.user_id
 WHERE ($1::uuid IS NULL OR ec.student_id = $1)
@@ -3757,6 +4029,7 @@ type GetExternalCertificationsRow struct {
 	IsVerified      bool
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	DeletedAt       sql.NullTime
 	FirstName       string
 	LastName        string
 	Email           string
@@ -3783,6 +4056,7 @@ func (q *Queries) GetExternalCertifications(ctx context.Context, dollar_1 uuid.U
 			&i.IsVerified,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.FirstName,
 			&i.LastName,
 			&i.Email,
@@ -3842,7 +4116,7 @@ func (q *Queries) GetFeeStructuresBySchool(ctx context.Context, schoolID uuid.UU
 }
 
 const getFeedbackByID = `-- name: GetFeedbackByID :one
-SELECT f.feedback_id, f.school_id, f.user_id, f.subject, f.message, f.rating, f.feedback_type, f.status, f.submitted_at, f.created_at, f.updated_at, u.first_name, u.last_name, u.email, s.school_name
+SELECT f.feedback_id, f.school_id, f.user_id, f.subject, f.message, f.rating, f.feedback_type, f.status, f.submitted_at, f.created_at, f.updated_at, f.deleted_at, u.first_name, u.last_name, u.email, s.school_name
 FROM feedback f
 JOIN users u ON f.user_id = u.user_id
 LEFT JOIN schools s ON f.school_id = s.school_id
@@ -3861,6 +4135,7 @@ type GetFeedbackByIDRow struct {
 	SubmittedAt  time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	DeletedAt    sql.NullTime
 	FirstName    string
 	LastName     string
 	Email        string
@@ -3882,6 +4157,7 @@ func (q *Queries) GetFeedbackByID(ctx context.Context, feedbackID uuid.UUID) (Ge
 		&i.SubmittedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 		&i.FirstName,
 		&i.LastName,
 		&i.Email,
@@ -4068,7 +4344,7 @@ func (q *Queries) GetLearningMaterials(ctx context.Context, arg GetLearningMater
 }
 
 const getLessonPlanByID = `-- name: GetLessonPlanByID :one
-SELECT lesson_plan_id, school_id, teacher_id, class_id, subject_id, title, topic, lesson_number, objectives, content, assessment_questions, online_meeting_link, date_covered, created_at, updated_at FROM lesson_plans
+SELECT lesson_plan_id, school_id, teacher_id, class_id, subject_id, title, topic, lesson_number, objectives, content, assessment_questions, online_meeting_link, date_covered, created_at, updated_at, deleted_at FROM lesson_plans
 WHERE lesson_plan_id = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -4097,12 +4373,13 @@ func (q *Queries) GetLessonPlanByID(ctx context.Context, arg GetLessonPlanByIDPa
 		&i.DateCovered,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getLessonPlans = `-- name: GetLessonPlans :many
-SELECT lp.lesson_plan_id, lp.school_id, lp.teacher_id, lp.class_id, lp.subject_id, lp.title, lp.topic, lp.lesson_number, lp.objectives, lp.content, lp.assessment_questions, lp.online_meeting_link, lp.date_covered, lp.created_at, lp.updated_at, u.first_name as teacher_first_name, u.last_name as teacher_last_name, ac.class_name
+SELECT lp.lesson_plan_id, lp.school_id, lp.teacher_id, lp.class_id, lp.subject_id, lp.title, lp.topic, lp.lesson_number, lp.objectives, lp.content, lp.assessment_questions, lp.online_meeting_link, lp.date_covered, lp.created_at, lp.updated_at, lp.deleted_at, u.first_name as teacher_first_name, u.last_name as teacher_last_name, ac.class_name
 FROM lesson_plans lp
 JOIN users u ON lp.teacher_id = u.user_id
 LEFT JOIN academic_classes ac ON lp.class_id = ac.class_id
@@ -4134,6 +4411,7 @@ type GetLessonPlansRow struct {
 	DateCovered         sql.NullTime
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+	DeletedAt           sql.NullTime
 	TeacherFirstName    string
 	TeacherLastName     string
 	ClassName           sql.NullString
@@ -4164,6 +4442,7 @@ func (q *Queries) GetLessonPlans(ctx context.Context, arg GetLessonPlansParams) 
 			&i.DateCovered,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.TeacherFirstName,
 			&i.TeacherLastName,
 			&i.ClassName,
@@ -4228,7 +4507,7 @@ func (q *Queries) GetMeetingAttendees(ctx context.Context, meetingID uuid.UUID) 
 }
 
 const getMeetingByID = `-- name: GetMeetingByID :one
-SELECT m.meeting_id, m.school_id, m.title, m.agenda, m.meeting_date, m.duration_minutes, m.location, m.meeting_type, m.organizer_id, m.created_at, m.updated_at, u.first_name as organizer_first_name, u.last_name as organizer_last_name
+SELECT m.meeting_id, m.school_id, m.title, m.agenda, m.meeting_date, m.duration_minutes, m.location, m.meeting_type, m.organizer_id, m.created_at, m.updated_at, m.deleted_at, u.first_name as organizer_first_name, u.last_name as organizer_last_name
 FROM meetings m
 LEFT JOIN users u ON m.organizer_id = u.user_id
 WHERE m.meeting_id = $1 AND m.school_id = $2 LIMIT 1
@@ -4251,6 +4530,7 @@ type GetMeetingByIDRow struct {
 	OrganizerID        uuid.NullUUID
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	DeletedAt          sql.NullTime
 	OrganizerFirstName sql.NullString
 	OrganizerLastName  sql.NullString
 }
@@ -4271,6 +4551,7 @@ func (q *Queries) GetMeetingByID(ctx context.Context, arg GetMeetingByIDParams) 
 		&i.OrganizerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 		&i.OrganizerFirstName,
 		&i.OrganizerLastName,
 	)
@@ -4278,7 +4559,7 @@ func (q *Queries) GetMeetingByID(ctx context.Context, arg GetMeetingByIDParams) 
 }
 
 const getMeetingsBySchool = `-- name: GetMeetingsBySchool :many
-SELECT m.meeting_id, m.school_id, m.title, m.agenda, m.meeting_date, m.duration_minutes, m.location, m.meeting_type, m.organizer_id, m.created_at, m.updated_at, u.first_name as organizer_first_name, u.last_name as organizer_last_name
+SELECT m.meeting_id, m.school_id, m.title, m.agenda, m.meeting_date, m.duration_minutes, m.location, m.meeting_type, m.organizer_id, m.created_at, m.updated_at, m.deleted_at, u.first_name as organizer_first_name, u.last_name as organizer_last_name
 FROM meetings m
 LEFT JOIN users u ON m.organizer_id = u.user_id
 WHERE m.school_id = $1
@@ -4297,6 +4578,7 @@ type GetMeetingsBySchoolRow struct {
 	OrganizerID        uuid.NullUUID
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	DeletedAt          sql.NullTime
 	OrganizerFirstName sql.NullString
 	OrganizerLastName  sql.NullString
 }
@@ -4322,6 +4604,7 @@ func (q *Queries) GetMeetingsBySchool(ctx context.Context, schoolID uuid.UUID) (
 			&i.OrganizerID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.OrganizerFirstName,
 			&i.OrganizerLastName,
 		); err != nil {
@@ -4339,7 +4622,7 @@ func (q *Queries) GetMeetingsBySchool(ctx context.Context, schoolID uuid.UUID) (
 }
 
 const getNewsletterByID = `-- name: GetNewsletterByID :one
-SELECT newsletter_id, title, content, sent_at, sent_by_user_id, target_schools, attachments, created_at, updated_at FROM newsletters
+SELECT newsletter_id, title, content, sent_at, sent_by_user_id, target_schools, attachments, created_at, updated_at, deleted_at FROM newsletters
 WHERE newsletter_id = $1 LIMIT 1
 `
 
@@ -4356,12 +4639,13 @@ func (q *Queries) GetNewsletterByID(ctx context.Context, newsletterID uuid.UUID)
 		&i.Attachments,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getNewsletters = `-- name: GetNewsletters :many
-SELECT n.newsletter_id, n.title, n.content, n.sent_at, n.sent_by_user_id, n.target_schools, n.attachments, n.created_at, n.updated_at, u.first_name as sender_first_name, u.last_name as sender_last_name
+SELECT n.newsletter_id, n.title, n.content, n.sent_at, n.sent_by_user_id, n.target_schools, n.attachments, n.created_at, n.updated_at, n.deleted_at, u.first_name as sender_first_name, u.last_name as sender_last_name
 FROM newsletters n
 LEFT JOIN users u ON n.sent_by_user_id = u.user_id
 WHERE (n.target_schools @> $1::jsonb OR n.target_schools = '[]'::jsonb OR n.target_schools IS NULL)
@@ -4378,6 +4662,7 @@ type GetNewslettersRow struct {
 	Attachments     pqtype.NullRawMessage
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	DeletedAt       sql.NullTime
 	SenderFirstName sql.NullString
 	SenderLastName  sql.NullString
 }
@@ -4401,6 +4686,7 @@ func (q *Queries) GetNewsletters(ctx context.Context, dollar_1 json.RawMessage) 
 			&i.Attachments,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.SenderFirstName,
 			&i.SenderLastName,
 		); err != nil {
@@ -4486,7 +4772,7 @@ func (q *Queries) GetNotificationsByRecipient(ctx context.Context, recipientID u
 }
 
 const getOnlineClassSessionByID = `-- name: GetOnlineClassSessionByID :one
-SELECT session_id, school_id, class_id, teacher_id, session_title, start_time, end_time, meeting_link, description, recording_link, created_at, updated_at FROM online_class_sessions
+SELECT session_id, school_id, class_id, teacher_id, session_title, start_time, end_time, meeting_link, description, recording_link, created_at, updated_at, deleted_at FROM online_class_sessions
 WHERE session_id = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -4512,12 +4798,13 @@ func (q *Queries) GetOnlineClassSessionByID(ctx context.Context, arg GetOnlineCl
 		&i.RecordingLink,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getOnlineClassSessions = `-- name: GetOnlineClassSessions :many
-SELECT ocs.session_id, ocs.school_id, ocs.class_id, ocs.teacher_id, ocs.session_title, ocs.start_time, ocs.end_time, ocs.meeting_link, ocs.description, ocs.recording_link, ocs.created_at, ocs.updated_at, ac.class_name, u.first_name as teacher_first_name, u.last_name as teacher_last_name
+SELECT ocs.session_id, ocs.school_id, ocs.class_id, ocs.teacher_id, ocs.session_title, ocs.start_time, ocs.end_time, ocs.meeting_link, ocs.description, ocs.recording_link, ocs.created_at, ocs.updated_at, ocs.deleted_at, ac.class_name, u.first_name as teacher_first_name, u.last_name as teacher_last_name
 FROM online_class_sessions ocs
 JOIN academic_classes ac ON ocs.class_id = ac.class_id
 JOIN users u ON ocs.teacher_id = u.user_id
@@ -4546,6 +4833,7 @@ type GetOnlineClassSessionsRow struct {
 	RecordingLink    sql.NullString
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	DeletedAt        sql.NullTime
 	ClassName        string
 	TeacherFirstName string
 	TeacherLastName  string
@@ -4573,44 +4861,10 @@ func (q *Queries) GetOnlineClassSessions(ctx context.Context, arg GetOnlineClass
 			&i.RecordingLink,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.ClassName,
 			&i.TeacherFirstName,
 			&i.TeacherLastName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getOptionsByQuestion = `-- name: GetOptionsByQuestion :many
-SELECT option_id, question_id, option_text, is_correct, created_at, updated_at FROM options
-WHERE question_id = $1
-`
-
-func (q *Queries) GetOptionsByQuestion(ctx context.Context, questionID uuid.UUID) ([]Option, error) {
-	rows, err := q.db.QueryContext(ctx, getOptionsByQuestion, questionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Option
-	for rows.Next() {
-		var i Option
-		if err := rows.Scan(
-			&i.OptionID,
-			&i.QuestionID,
-			&i.OptionText,
-			&i.IsCorrect,
-			&i.CreatedAt,
-			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -4771,44 +5025,6 @@ func (q *Queries) GetParentsBySchool(ctx context.Context, schoolID uuid.UUID) ([
 	return items, nil
 }
 
-const getQuestionsByQuiz = `-- name: GetQuestionsByQuiz :many
-SELECT question_id, quiz_id, exam_id, question_text, question_type, "order", created_at, updated_at FROM questions
-WHERE quiz_id = $1
-ORDER BY "order" ASC
-`
-
-func (q *Queries) GetQuestionsByQuiz(ctx context.Context, quizID uuid.NullUUID) ([]Question, error) {
-	rows, err := q.db.QueryContext(ctx, getQuestionsByQuiz, quizID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Question
-	for rows.Next() {
-		var i Question
-		if err := rows.Scan(
-			&i.QuestionID,
-			&i.QuizID,
-			&i.ExamID,
-			&i.QuestionText,
-			&i.QuestionType,
-			&i.Order,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getQuizByID = `-- name: GetQuizByID :one
 SELECT quiz_id, assignment_id, school_id, teacher_id, subject_id, title, description, quiz_type, duration_minutes, start_time, end_time, created_at, updated_at FROM quizzes
 WHERE quiz_id = $1 AND school_id = $2 LIMIT 1
@@ -4841,7 +5057,7 @@ func (q *Queries) GetQuizByID(ctx context.Context, arg GetQuizByIDParams) (Quiz,
 }
 
 const getQuizSubmissionByID = `-- name: GetQuizSubmissionByID :one
-SELECT qs.submission_id, qs.quiz_id, qs.student_id, qs.score, qs.submitted_at, qs.status, q.title as quiz_title, q.teacher_id,
+SELECT qs.submission_id, qs.quiz_id, qs.student_id, qs.score, qs.submitted_at, qs.status, qs.deleted_at, q.title as quiz_title, q.teacher_id,
        u.first_name as student_first_name, u.last_name as student_last_name
 FROM quiz_submissions qs
 JOIN quizzes q ON qs.quiz_id = q.quiz_id
@@ -4856,6 +5072,7 @@ type GetQuizSubmissionByIDRow struct {
 	Score            sql.NullString
 	SubmittedAt      time.Time
 	Status           string
+	DeletedAt        sql.NullTime
 	QuizTitle        string
 	TeacherID        uuid.UUID
 	StudentFirstName string
@@ -4873,6 +5090,7 @@ func (q *Queries) GetQuizSubmissionByID(ctx context.Context, submissionID uuid.U
 		&i.Score,
 		&i.SubmittedAt,
 		&i.Status,
+		&i.DeletedAt,
 		&i.QuizTitle,
 		&i.TeacherID,
 		&i.StudentFirstName,
@@ -4882,7 +5100,7 @@ func (q *Queries) GetQuizSubmissionByID(ctx context.Context, submissionID uuid.U
 }
 
 const getQuizSubmissions = `-- name: GetQuizSubmissions :many
-SELECT qs.submission_id, qs.quiz_id, qs.student_id, qs.score, qs.submitted_at, qs.status, q.title as quiz_title, u.first_name, u.last_name, u.email
+SELECT qs.submission_id, qs.quiz_id, qs.student_id, qs.score, qs.submitted_at, qs.status, qs.deleted_at, q.title as quiz_title, u.first_name, u.last_name, u.email
 FROM quiz_submissions qs
 JOIN quizzes q ON qs.quiz_id = q.quiz_id
 JOIN users u ON qs.student_id = u.user_id
@@ -4905,6 +5123,7 @@ type GetQuizSubmissionsRow struct {
 	Score        sql.NullString
 	SubmittedAt  time.Time
 	Status       string
+	DeletedAt    sql.NullTime
 	QuizTitle    string
 	FirstName    string
 	LastName     string
@@ -4927,6 +5146,7 @@ func (q *Queries) GetQuizSubmissions(ctx context.Context, arg GetQuizSubmissions
 			&i.Score,
 			&i.SubmittedAt,
 			&i.Status,
+			&i.DeletedAt,
 			&i.QuizTitle,
 			&i.FirstName,
 			&i.LastName,
@@ -5005,7 +5225,7 @@ func (q *Queries) GetRoleByName(ctx context.Context, roleName string) (Role, err
 }
 
 const getRoomByID = `-- name: GetRoomByID :one
-SELECT room_id, school_id, room_name, capacity, room_type, department_id, created_at, updated_at FROM rooms
+SELECT room_id, school_id, room_name, capacity, room_type, department_id, created_at, updated_at, deleted_at FROM rooms
 WHERE room_id = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -5027,12 +5247,13 @@ func (q *Queries) GetRoomByID(ctx context.Context, arg GetRoomByIDParams) (Room,
 		&i.DepartmentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getRoomsBySchool = `-- name: GetRoomsBySchool :many
-SELECT r.room_id, r.school_id, r.room_name, r.capacity, r.room_type, r.department_id, r.created_at, r.updated_at, d.department_name
+SELECT r.room_id, r.school_id, r.room_name, r.capacity, r.room_type, r.department_id, r.created_at, r.updated_at, r.deleted_at, d.department_name
 FROM rooms r
 LEFT JOIN departments d ON r.department_id = d.department_id
 WHERE r.school_id = $1
@@ -5047,6 +5268,7 @@ type GetRoomsBySchoolRow struct {
 	DepartmentID   uuid.NullUUID
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DeletedAt      sql.NullTime
 	DepartmentName sql.NullString
 }
 
@@ -5068,6 +5290,7 @@ func (q *Queries) GetRoomsBySchool(ctx context.Context, schoolID uuid.UUID) ([]G
 			&i.DepartmentID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.DepartmentName,
 		); err != nil {
 			return nil, err
@@ -5085,7 +5308,7 @@ func (q *Queries) GetRoomsBySchool(ctx context.Context, schoolID uuid.UUID) ([]G
 
 const getSchool = `-- name: GetSchool :one
 
-SELECT school_id, school_name, subdomain, status, school_initial, address, phone_number, email, logo_url, primary_color, secondary_color, created_at, updated_at FROM schools
+SELECT school_id, school_name, subdomain, status, school_initial, address, phone_number, email, logo_url, primary_color, secondary_color, created_at, updated_at, deleted_at FROM schools
 WHERE school_id = $1 LIMIT 1
 `
 
@@ -5108,12 +5331,13 @@ func (q *Queries) GetSchool(ctx context.Context, schoolID uuid.UUID) (School, er
 		&i.SecondaryColor,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getSchoolByInitial = `-- name: GetSchoolByInitial :one
-SELECT school_id, school_name, subdomain, status, school_initial, address, phone_number, email, logo_url, primary_color, secondary_color, created_at, updated_at FROM schools
+SELECT school_id, school_name, subdomain, status, school_initial, address, phone_number, email, logo_url, primary_color, secondary_color, created_at, updated_at, deleted_at FROM schools
 WHERE school_initial = $1 LIMIT 1
 `
 
@@ -5134,12 +5358,13 @@ func (q *Queries) GetSchoolByInitial(ctx context.Context, schoolInitial sql.Null
 		&i.SecondaryColor,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getSchoolByNameOrSubdomain = `-- name: GetSchoolByNameOrSubdomain :one
-SELECT school_id, school_name, subdomain, status, school_initial, address, phone_number, email, logo_url, primary_color, secondary_color, created_at, updated_at FROM schools
+SELECT school_id, school_name, subdomain, status, school_initial, address, phone_number, email, logo_url, primary_color, secondary_color, created_at, updated_at, deleted_at FROM schools
 WHERE school_name = $1 OR subdomain = $2
 LIMIT 1
 `
@@ -5149,7 +5374,6 @@ type GetSchoolByNameOrSubdomainParams struct {
 	Subdomain  sql.NullString
 }
 
-// Schools: GetByNameOrSubdomain, GetByInitial, GetWithAdmin, UpdateStatus
 func (q *Queries) GetSchoolByNameOrSubdomain(ctx context.Context, arg GetSchoolByNameOrSubdomainParams) (School, error) {
 	row := q.db.QueryRowContext(ctx, getSchoolByNameOrSubdomain, arg.SchoolName, arg.Subdomain)
 	var i School
@@ -5167,6 +5391,7 @@ func (q *Queries) GetSchoolByNameOrSubdomain(ctx context.Context, arg GetSchoolB
 		&i.SecondaryColor,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -5197,7 +5422,7 @@ func (q *Queries) GetSchoolSettings(ctx context.Context, schoolID uuid.UUID) (Sc
 }
 
 const getSchoolWithAdmin = `-- name: GetSchoolWithAdmin :one
-SELECT s.school_id, s.school_name, s.subdomain, s.status, s.school_initial, s.address, s.phone_number, s.email, s.logo_url, s.primary_color, s.secondary_color, s.created_at, s.updated_at, u.firebase_uid as admin_firebase_uid, r.role_name as admin_role_name
+SELECT s.school_id, s.school_name, s.subdomain, s.status, s.school_initial, s.address, s.phone_number, s.email, s.logo_url, s.primary_color, s.secondary_color, s.created_at, s.updated_at, s.deleted_at, u.firebase_uid as admin_firebase_uid, r.role_name as admin_role_name
 FROM schools s
 JOIN users u ON s.school_id = u.school_id
 JOIN roles r ON u.role_id = r.role_id
@@ -5219,6 +5444,7 @@ type GetSchoolWithAdminRow struct {
 	SecondaryColor   sql.NullString
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	DeletedAt        sql.NullTime
 	AdminFirebaseUid sql.NullString
 	AdminRoleName    string
 }
@@ -5240,6 +5466,7 @@ func (q *Queries) GetSchoolWithAdmin(ctx context.Context, schoolID uuid.UUID) (G
 		&i.SecondaryColor,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 		&i.AdminFirebaseUid,
 		&i.AdminRoleName,
 	)
@@ -5247,7 +5474,7 @@ func (q *Queries) GetSchoolWithAdmin(ctx context.Context, schoolID uuid.UUID) (G
 }
 
 const getShortCourseGradeByID = `-- name: GetShortCourseGradeByID :one
-SELECT scg.grade_id, scg.enrollment_id, scg.course_id, scg.student_id, scg.score, scg.feedback, scg.graded_by_user_id, scg.graded_at, scg.created_at, scg.updated_at, u.first_name, u.last_name, u.email, c.course_name, e.school_id
+SELECT scg.grade_id, scg.enrollment_id, scg.course_id, scg.student_id, scg.score, scg.feedback, scg.graded_by_user_id, scg.graded_at, scg.created_at, scg.updated_at, scg.deleted_at, u.first_name, u.last_name, u.email, c.course_name, e.school_id
 FROM short_course_grades scg
 JOIN users u ON scg.student_id = u.user_id
 JOIN courses c ON scg.course_id = c.course_id
@@ -5266,6 +5493,7 @@ type GetShortCourseGradeByIDRow struct {
 	GradedAt       time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DeletedAt      sql.NullTime
 	FirstName      string
 	LastName       string
 	Email          string
@@ -5287,6 +5515,7 @@ func (q *Queries) GetShortCourseGradeByID(ctx context.Context, gradeID uuid.UUID
 		&i.GradedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 		&i.FirstName,
 		&i.LastName,
 		&i.Email,
@@ -5297,7 +5526,7 @@ func (q *Queries) GetShortCourseGradeByID(ctx context.Context, gradeID uuid.UUID
 }
 
 const getShortCourseGrades = `-- name: GetShortCourseGrades :many
-SELECT scg.grade_id, scg.enrollment_id, scg.course_id, scg.student_id, scg.score, scg.feedback, scg.graded_by_user_id, scg.graded_at, scg.created_at, scg.updated_at, u.first_name, u.last_name, u.email, c.course_name, e.school_id
+SELECT scg.grade_id, scg.enrollment_id, scg.course_id, scg.student_id, scg.score, scg.feedback, scg.graded_by_user_id, scg.graded_at, scg.created_at, scg.updated_at, scg.deleted_at, u.first_name, u.last_name, u.email, c.course_name, e.school_id
 FROM short_course_grades scg
 JOIN users u ON scg.student_id = u.user_id
 JOIN courses c ON scg.course_id = c.course_id
@@ -5325,6 +5554,7 @@ type GetShortCourseGradesRow struct {
 	GradedAt       time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DeletedAt      sql.NullTime
 	FirstName      string
 	LastName       string
 	Email          string
@@ -5352,6 +5582,7 @@ func (q *Queries) GetShortCourseGrades(ctx context.Context, arg GetShortCourseGr
 			&i.GradedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.FirstName,
 			&i.LastName,
 			&i.Email,
@@ -5554,7 +5785,7 @@ func (q *Queries) GetStudentByUserID(ctx context.Context, arg GetStudentByUserID
 }
 
 const getStudentCourseProgressByID = `-- name: GetStudentCourseProgressByID :one
-SELECT scp.progress_id, scp.enrollment_id, scp.progress_percentage, scp.last_activity_at, scp.updated_at, e.student_id, e.school_id, e.class_id
+SELECT scp.progress_id, scp.enrollment_id, scp.progress_percentage, scp.last_activity_at, scp.updated_at, scp.deleted_at, e.student_id, e.school_id, e.class_id
 FROM student_course_progress scp
 JOIN enrollments e ON scp.enrollment_id = e.enrollment_id
 WHERE scp.progress_id = $1 LIMIT 1
@@ -5566,6 +5797,7 @@ type GetStudentCourseProgressByIDRow struct {
 	ProgressPercentage string
 	LastActivityAt     time.Time
 	UpdatedAt          time.Time
+	DeletedAt          sql.NullTime
 	StudentID          uuid.UUID
 	SchoolID           uuid.UUID
 	ClassID            uuid.UUID
@@ -5580,6 +5812,7 @@ func (q *Queries) GetStudentCourseProgressByID(ctx context.Context, progressID u
 		&i.ProgressPercentage,
 		&i.LastActivityAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 		&i.StudentID,
 		&i.SchoolID,
 		&i.ClassID,
@@ -5588,7 +5821,7 @@ func (q *Queries) GetStudentCourseProgressByID(ctx context.Context, progressID u
 }
 
 const getStudentCourseProgresses = `-- name: GetStudentCourseProgresses :many
-SELECT scp.progress_id, scp.enrollment_id, scp.progress_percentage, scp.last_activity_at, scp.updated_at, e.student_id, e.school_id, e.class_id, u.first_name, u.last_name
+SELECT scp.progress_id, scp.enrollment_id, scp.progress_percentage, scp.last_activity_at, scp.updated_at, scp.deleted_at, e.student_id, e.school_id, e.class_id, u.first_name, u.last_name
 FROM student_course_progress scp
 JOIN enrollments e ON scp.enrollment_id = e.enrollment_id
 JOIN users u ON e.student_id = u.user_id
@@ -5610,6 +5843,7 @@ type GetStudentCourseProgressesRow struct {
 	ProgressPercentage string
 	LastActivityAt     time.Time
 	UpdatedAt          time.Time
+	DeletedAt          sql.NullTime
 	StudentID          uuid.UUID
 	SchoolID           uuid.UUID
 	ClassID            uuid.UUID
@@ -5632,6 +5866,7 @@ func (q *Queries) GetStudentCourseProgresses(ctx context.Context, arg GetStudent
 			&i.ProgressPercentage,
 			&i.LastActivityAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.StudentID,
 			&i.SchoolID,
 			&i.ClassID,
@@ -5816,7 +6051,7 @@ func (q *Queries) GetStudentsBySchool(ctx context.Context, schoolID uuid.UUID) (
 }
 
 const getSubjectByID = `-- name: GetSubjectByID :one
-SELECT subject_id, school_id, subject_name, description, double_period_required, lab_period_required, max_online_percentage, created_at, updated_at FROM subjects
+SELECT subject_id, school_id, subject_name, description, double_period_required, lab_period_required, max_online_percentage, created_at, updated_at, deleted_at FROM subjects
 WHERE subject_id = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -5838,12 +6073,13 @@ func (q *Queries) GetSubjectByID(ctx context.Context, arg GetSubjectByIDParams) 
 		&i.MaxOnlinePercentage,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getSubjectsBySchool = `-- name: GetSubjectsBySchool :many
-SELECT subject_id, school_id, subject_name, description, double_period_required, lab_period_required, max_online_percentage, created_at, updated_at FROM subjects
+SELECT subject_id, school_id, subject_name, description, double_period_required, lab_period_required, max_online_percentage, created_at, updated_at, deleted_at FROM subjects
 WHERE school_id = $1
 `
 
@@ -5867,6 +6103,7 @@ func (q *Queries) GetSubjectsBySchool(ctx context.Context, schoolID uuid.UUID) (
 			&i.MaxOnlinePercentage,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -6082,7 +6319,7 @@ func (q *Queries) GetSubscriptionTiers(ctx context.Context) ([]SubscriptionTier,
 }
 
 const getTeacherAvailabilities = `-- name: GetTeacherAvailabilities :many
-SELECT availability_id, teacher_id, day_of_week, start_time, end_time, is_recurring, notes, created_at, updated_at FROM teacher_availability
+SELECT availability_id, teacher_id, day_of_week, start_time, end_time, is_recurring, notes, created_at, updated_at, deleted_at FROM teacher_availability
 WHERE ($1::uuid IS NULL OR teacher_id = $1)
 ORDER BY day_of_week, start_time
 `
@@ -6106,6 +6343,7 @@ func (q *Queries) GetTeacherAvailabilities(ctx context.Context, teacherID uuid.N
 			&i.Notes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -6121,7 +6359,7 @@ func (q *Queries) GetTeacherAvailabilities(ctx context.Context, teacherID uuid.N
 }
 
 const getTeacherAvailabilityByID = `-- name: GetTeacherAvailabilityByID :one
-SELECT availability_id, teacher_id, day_of_week, start_time, end_time, is_recurring, notes, created_at, updated_at FROM teacher_availability
+SELECT availability_id, teacher_id, day_of_week, start_time, end_time, is_recurring, notes, created_at, updated_at, deleted_at FROM teacher_availability
 WHERE availability_id = $1 LIMIT 1
 `
 
@@ -6138,6 +6376,7 @@ func (q *Queries) GetTeacherAvailabilityByID(ctx context.Context, availabilityID
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -6205,8 +6444,64 @@ func (q *Queries) GetTeacherByUserID(ctx context.Context, arg GetTeacherByUserID
 	return i, err
 }
 
+const getTeacherSubjects = `-- name: GetTeacherSubjects :many
+SELECT s.subject_id, s.school_id, s.subject_name, s.description, s.double_period_required, s.lab_period_required, s.max_online_percentage, s.created_at, s.updated_at, s.deleted_at, ts.teacher_id
+FROM subjects s
+JOIN teacher_subjects ts ON s.subject_id = ts.subject_id
+WHERE ts.teacher_id = $1
+`
+
+type GetTeacherSubjectsRow struct {
+	SubjectID            uuid.UUID
+	SchoolID             uuid.UUID
+	SubjectName          string
+	Description          sql.NullString
+	DoublePeriodRequired bool
+	LabPeriodRequired    bool
+	MaxOnlinePercentage  sql.NullString
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	DeletedAt            sql.NullTime
+	TeacherID            uuid.UUID
+}
+
+func (q *Queries) GetTeacherSubjects(ctx context.Context, teacherID uuid.UUID) ([]GetTeacherSubjectsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getTeacherSubjects, teacherID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTeacherSubjectsRow
+	for rows.Next() {
+		var i GetTeacherSubjectsRow
+		if err := rows.Scan(
+			&i.SubjectID,
+			&i.SchoolID,
+			&i.SubjectName,
+			&i.Description,
+			&i.DoublePeriodRequired,
+			&i.LabPeriodRequired,
+			&i.MaxOnlinePercentage,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.TeacherID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTeacherWorkloadByID = `-- name: GetTeacherWorkloadByID :one
-SELECT workload_id, teacher_id, max_hours_per_week, current_hours_per_week, created_at, updated_at FROM teacher_workloads
+SELECT workload_id, teacher_id, max_hours_per_week, current_hours_per_week, created_at, updated_at, deleted_at FROM teacher_workloads
 WHERE workload_id = $1 LIMIT 1
 `
 
@@ -6220,12 +6515,13 @@ func (q *Queries) GetTeacherWorkloadByID(ctx context.Context, workloadID uuid.UU
 		&i.CurrentHoursPerWeek,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getTeacherWorkloads = `-- name: GetTeacherWorkloads :many
-SELECT tw.workload_id, tw.teacher_id, tw.max_hours_per_week, tw.current_hours_per_week, tw.created_at, tw.updated_at, u.first_name, u.last_name, u.email
+SELECT tw.workload_id, tw.teacher_id, tw.max_hours_per_week, tw.current_hours_per_week, tw.created_at, tw.updated_at, tw.deleted_at, u.first_name, u.last_name, u.email
 FROM teacher_workloads tw
 JOIN users u ON tw.teacher_id = u.user_id
 WHERE u.school_id = $1
@@ -6245,6 +6541,7 @@ type GetTeacherWorkloadsRow struct {
 	CurrentHoursPerWeek string
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+	DeletedAt           sql.NullTime
 	FirstName           string
 	LastName            string
 	Email               string
@@ -6267,6 +6564,7 @@ func (q *Queries) GetTeacherWorkloads(ctx context.Context, arg GetTeacherWorkloa
 			&i.CurrentHoursPerWeek,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.FirstName,
 			&i.LastName,
 			&i.Email,
@@ -6360,8 +6658,106 @@ func (q *Queries) GetTeachersBySchool(ctx context.Context, schoolID uuid.UUID) (
 	return items, nil
 }
 
+const getTimetableByID = `-- name: GetTimetableByID :one
+SELECT timetable_id, school_id, academic_year, semester, title, description, is_active, created_at, updated_at, deleted_at FROM timetables
+WHERE timetable_id = $1 AND school_id = $2 LIMIT 1
+`
+
+type GetTimetableByIDParams struct {
+	TimetableID uuid.UUID
+	SchoolID    uuid.UUID
+}
+
+func (q *Queries) GetTimetableByID(ctx context.Context, arg GetTimetableByIDParams) (Timetable, error) {
+	row := q.db.QueryRowContext(ctx, getTimetableByID, arg.TimetableID, arg.SchoolID)
+	var i Timetable
+	err := row.Scan(
+		&i.TimetableID,
+		&i.SchoolID,
+		&i.AcademicYear,
+		&i.Semester,
+		&i.Title,
+		&i.Description,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getTimetableEntries = `-- name: GetTimetableEntries :many
+SELECT te.entry_id, te.timetable_id, te.class_id, te.subject_id, te.teacher_id, te.room_id, te.day_of_week, te.start_time, te.end_time, te.created_at, te.updated_at, ac.class_name, s.subject_name, u.first_name as teacher_first_name, u.last_name as teacher_last_name, r.room_name
+FROM timetable_entries te
+JOIN academic_classes ac ON te.class_id = ac.class_id
+JOIN subjects s ON te.subject_id = s.subject_id
+JOIN users u ON te.teacher_id = u.user_id
+JOIN rooms r ON te.room_id = r.room_id
+WHERE te.timetable_id = $1
+ORDER BY te.day_of_week, te.start_time
+`
+
+type GetTimetableEntriesRow struct {
+	EntryID          uuid.UUID
+	TimetableID      uuid.UUID
+	ClassID          uuid.UUID
+	SubjectID        uuid.UUID
+	TeacherID        uuid.UUID
+	RoomID           uuid.UUID
+	DayOfWeek        int32
+	StartTime        time.Time
+	EndTime          time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	ClassName        string
+	SubjectName      string
+	TeacherFirstName string
+	TeacherLastName  string
+	RoomName         string
+}
+
+func (q *Queries) GetTimetableEntries(ctx context.Context, timetableID uuid.UUID) ([]GetTimetableEntriesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getTimetableEntries, timetableID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTimetableEntriesRow
+	for rows.Next() {
+		var i GetTimetableEntriesRow
+		if err := rows.Scan(
+			&i.EntryID,
+			&i.TimetableID,
+			&i.ClassID,
+			&i.SubjectID,
+			&i.TeacherID,
+			&i.RoomID,
+			&i.DayOfWeek,
+			&i.StartTime,
+			&i.EndTime,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ClassName,
+			&i.SubjectName,
+			&i.TeacherFirstName,
+			&i.TeacherLastName,
+			&i.RoomName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTimetables = `-- name: GetTimetables :many
-SELECT timetable_id, school_id, academic_year, semester, title, description, is_active, created_at, updated_at FROM timetables
+SELECT timetable_id, school_id, academic_year, semester, title, description, is_active, created_at, updated_at, deleted_at FROM timetables
 WHERE school_id = $1
 ORDER BY created_at DESC
 `
@@ -6386,6 +6782,7 @@ func (q *Queries) GetTimetables(ctx context.Context, schoolID uuid.UUID) ([]Time
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -6401,7 +6798,7 @@ func (q *Queries) GetTimetables(ctx context.Context, schoolID uuid.UUID) ([]Time
 }
 
 const getTranscriptByID = `-- name: GetTranscriptByID :one
-SELECT transcript_id, school_id, student_id, academic_year, cumulative_gpa, transcript_data, issued_at, issued_by_user_id, created_at, updated_at FROM transcripts
+SELECT transcript_id, school_id, student_id, academic_year, cumulative_gpa, transcript_data, issued_at, issued_by_user_id, created_at, updated_at, deleted_at FROM transcripts
 WHERE transcript_id = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -6424,12 +6821,13 @@ func (q *Queries) GetTranscriptByID(ctx context.Context, arg GetTranscriptByIDPa
 		&i.IssuedByUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getTranscripts = `-- name: GetTranscripts :many
-SELECT t.transcript_id, t.school_id, t.student_id, t.academic_year, t.cumulative_gpa, t.transcript_data, t.issued_at, t.issued_by_user_id, t.created_at, t.updated_at, u.first_name as student_first_name, u.last_name as student_last_name
+SELECT t.transcript_id, t.school_id, t.student_id, t.academic_year, t.cumulative_gpa, t.transcript_data, t.issued_at, t.issued_by_user_id, t.created_at, t.updated_at, t.deleted_at, u.first_name as student_first_name, u.last_name as student_last_name
 FROM transcripts t
 JOIN users u ON t.student_id = u.user_id
 WHERE t.school_id = $1
@@ -6453,6 +6851,7 @@ type GetTranscriptsRow struct {
 	IssuedByUserID   uuid.NullUUID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	DeletedAt        sql.NullTime
 	StudentFirstName string
 	StudentLastName  string
 }
@@ -6477,6 +6876,7 @@ func (q *Queries) GetTranscripts(ctx context.Context, arg GetTranscriptsParams) 
 			&i.IssuedByUserID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.StudentFirstName,
 			&i.StudentLastName,
 		); err != nil {
@@ -6519,7 +6919,7 @@ func (q *Queries) GetTransferRequestByID(ctx context.Context, transferID uuid.UU
 }
 
 const getUser = `-- name: GetUser :one
-SELECT user_id, school_id, role_id, first_name, last_name, email, contact_email, firebase_uid, password_hash, phone_number, date_of_birth, gender, profile_picture_url, is_active, created_at, updated_at FROM users
+SELECT user_id, school_id, role_id, first_name, last_name, email, contact_email, firebase_uid, password_hash, phone_number, date_of_birth, gender, profile_picture_url, is_active, created_at, updated_at, deleted_at, search_vector FROM users
 WHERE user_id = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -6548,12 +6948,14 @@ func (q *Queries) GetUser(ctx context.Context, arg GetUserParams) (User, error) 
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.SearchVector,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT user_id, school_id, role_id, first_name, last_name, email, contact_email, firebase_uid, password_hash, phone_number, date_of_birth, gender, profile_picture_url, is_active, created_at, updated_at FROM users
+SELECT user_id, school_id, role_id, first_name, last_name, email, contact_email, firebase_uid, password_hash, phone_number, date_of_birth, gender, profile_picture_url, is_active, created_at, updated_at, deleted_at, search_vector FROM users
 WHERE email = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -6582,12 +6984,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) 
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.SearchVector,
 	)
 	return i, err
 }
 
 const getUserByFirebaseUID = `-- name: GetUserByFirebaseUID :one
-SELECT u.user_id, u.school_id, u.role_id, u.first_name, u.last_name, u.email, u.contact_email, u.firebase_uid, u.password_hash, u.phone_number, u.date_of_birth, u.gender, u.profile_picture_url, u.is_active, u.created_at, u.updated_at, r.role_name
+SELECT u.user_id, u.school_id, u.role_id, u.first_name, u.last_name, u.email, u.contact_email, u.firebase_uid, u.password_hash, u.phone_number, u.date_of_birth, u.gender, u.profile_picture_url, u.is_active, u.created_at, u.updated_at, u.deleted_at, u.search_vector, r.role_name
 FROM users u
 JOIN roles r ON u.role_id = r.role_id
 WHERE u.firebase_uid = $1 LIMIT 1
@@ -6610,6 +7014,8 @@ type GetUserByFirebaseUIDRow struct {
 	IsActive          bool
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	DeletedAt         sql.NullTime
+	SearchVector      interface{}
 	RoleName          string
 }
 
@@ -6634,6 +7040,8 @@ func (q *Queries) GetUserByFirebaseUID(ctx context.Context, firebaseUid sql.Null
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.SearchVector,
 		&i.RoleName,
 	)
 	return i, err
@@ -6645,7 +7053,7 @@ INSERT INTO short_course_grades (
 ) VALUES (
   $1, $2, $3, $4, $5, $6
 )
-RETURNING grade_id, enrollment_id, course_id, student_id, score, feedback, graded_by_user_id, graded_at, created_at, updated_at
+RETURNING grade_id, enrollment_id, course_id, student_id, score, feedback, graded_by_user_id, graded_at, created_at, updated_at, deleted_at
 `
 
 type GradeShortCourseParams struct {
@@ -6679,12 +7087,92 @@ func (q *Queries) GradeShortCourse(ctx context.Context, arg GradeShortCoursePara
 		&i.GradedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
+const listAtRiskStudents = `-- name: ListAtRiskStudents :many
+SELECT
+    srs.risk_score_id, srs.school_id, srs.student_id, srs.attendance_rate, srs.average_grade, srs.risk_score, srs.risk_level, srs.last_calculated, srs.created_at, srs.updated_at,
+    u.first_name,
+    u.last_name,
+    u.email,
+    sp.enrollment_number,
+    sp.current_grade_level
+FROM student_risk_scores srs
+JOIN users u ON srs.student_id = u.user_id
+JOIN student_profiles sp ON srs.student_id = sp.user_id
+WHERE srs.school_id = $1
+  AND ($2::risk_level IS NULL OR srs.risk_level = $2)
+  AND srs.risk_level != 'Low'
+ORDER BY srs.risk_score DESC
+`
+
+type ListAtRiskStudentsParams struct {
+	SchoolID  uuid.UUID
+	RiskLevel NullRiskLevel
+}
+
+type ListAtRiskStudentsRow struct {
+	RiskScoreID       uuid.UUID
+	SchoolID          uuid.UUID
+	StudentID         uuid.UUID
+	AttendanceRate    string
+	AverageGrade      string
+	RiskScore         int32
+	RiskLevel         RiskLevel
+	LastCalculated    time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	FirstName         string
+	LastName          string
+	Email             string
+	EnrollmentNumber  string
+	CurrentGradeLevel sql.NullString
+}
+
+func (q *Queries) ListAtRiskStudents(ctx context.Context, arg ListAtRiskStudentsParams) ([]ListAtRiskStudentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAtRiskStudents, arg.SchoolID, arg.RiskLevel)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAtRiskStudentsRow
+	for rows.Next() {
+		var i ListAtRiskStudentsRow
+		if err := rows.Scan(
+			&i.RiskScoreID,
+			&i.SchoolID,
+			&i.StudentID,
+			&i.AttendanceRate,
+			&i.AverageGrade,
+			&i.RiskScore,
+			&i.RiskLevel,
+			&i.LastCalculated,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.FirstName,
+			&i.LastName,
+			&i.Email,
+			&i.EnrollmentNumber,
+			&i.CurrentGradeLevel,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAuditLogs = `-- name: ListAuditLogs :many
-SELECT al.log_id, al.school_id, al.user_id, al.action, al.entity_type, al.entity_id, al.old_value, al.new_value, al.ip_address, al.user_agent, al.logged_at, al.created_at, al.updated_at, u.first_name, u.last_name, u.email, s.school_name
+SELECT al.log_id, al.school_id, al.user_id, al.action, al.entity_type, al.entity_id, al.old_value, al.new_value, al.ip_address, al.user_agent, al.logged_at, al.created_at, al.updated_at, al.search_vector, u.first_name, u.last_name, u.email, s.school_name
 FROM audit_logs al
 LEFT JOIN users u ON al.user_id = u.user_id
 LEFT JOIN schools s ON al.school_id = s.school_id
@@ -6692,7 +7180,7 @@ WHERE (al.school_id = $1 OR $2::boolean = true)
   AND ($3::uuid IS NULL OR al.user_id = $3)
   AND ($4::text IS NULL OR al.entity_type = $4)
   AND ($5::uuid IS NULL OR al.entity_id = $5)
-  AND ($6::text IS NULL OR al.action LIKE '%' || $6::text || '%')
+  AND ($6::text IS NULL OR al.search_vector @@ websearch_to_tsquery('english', $6))
 ORDER BY al.logged_at DESC
 `
 
@@ -6702,27 +7190,28 @@ type ListAuditLogsParams struct {
 	UserID       uuid.NullUUID
 	EntityType   sql.NullString
 	EntityID     uuid.NullUUID
-	Action       sql.NullString
+	Query        sql.NullString
 }
 
 type ListAuditLogsRow struct {
-	LogID      uuid.UUID
-	SchoolID   uuid.NullUUID
-	UserID     uuid.NullUUID
-	Action     string
-	EntityType string
-	EntityID   uuid.NullUUID
-	OldValue   pqtype.NullRawMessage
-	NewValue   pqtype.NullRawMessage
-	IpAddress  sql.NullString
-	UserAgent  sql.NullString
-	LoggedAt   time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	FirstName  sql.NullString
-	LastName   sql.NullString
-	Email      sql.NullString
-	SchoolName sql.NullString
+	LogID        uuid.UUID
+	SchoolID     uuid.NullUUID
+	UserID       uuid.NullUUID
+	Action       string
+	EntityType   string
+	EntityID     uuid.NullUUID
+	OldValue     pqtype.NullRawMessage
+	NewValue     pqtype.NullRawMessage
+	IpAddress    sql.NullString
+	UserAgent    sql.NullString
+	LoggedAt     time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	SearchVector interface{}
+	FirstName    sql.NullString
+	LastName     sql.NullString
+	Email        sql.NullString
+	SchoolName   sql.NullString
 }
 
 func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]ListAuditLogsRow, error) {
@@ -6732,7 +7221,7 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 		arg.UserID,
 		arg.EntityType,
 		arg.EntityID,
-		arg.Action,
+		arg.Query,
 	)
 	if err != nil {
 		return nil, err
@@ -6755,6 +7244,7 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 			&i.LoggedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SearchVector,
 			&i.FirstName,
 			&i.LastName,
 			&i.Email,
@@ -6774,7 +7264,7 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 }
 
 const listFeedbacks = `-- name: ListFeedbacks :many
-SELECT f.feedback_id, f.school_id, f.user_id, f.subject, f.message, f.rating, f.feedback_type, f.status, f.submitted_at, f.created_at, f.updated_at, u.first_name, u.last_name, u.email, s.school_name
+SELECT f.feedback_id, f.school_id, f.user_id, f.subject, f.message, f.rating, f.feedback_type, f.status, f.submitted_at, f.created_at, f.updated_at, f.deleted_at, u.first_name, u.last_name, u.email, s.school_name
 FROM feedback f
 JOIN users u ON f.user_id = u.user_id
 LEFT JOIN schools s ON f.school_id = s.school_id
@@ -6799,6 +7289,7 @@ type ListFeedbacksRow struct {
 	SubmittedAt  time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	DeletedAt    sql.NullTime
 	FirstName    string
 	LastName     string
 	Email        string
@@ -6826,6 +7317,7 @@ func (q *Queries) ListFeedbacks(ctx context.Context, arg ListFeedbacksParams) ([
 			&i.SubmittedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 			&i.FirstName,
 			&i.LastName,
 			&i.Email,
@@ -6914,7 +7406,7 @@ func (q *Queries) ListPayments(ctx context.Context, schoolID uuid.UUID) ([]ListP
 }
 
 const listSchools = `-- name: ListSchools :many
-SELECT school_id, school_name, subdomain, status, school_initial, address, phone_number, email, logo_url, primary_color, secondary_color, created_at, updated_at FROM schools
+SELECT school_id, school_name, subdomain, status, school_initial, address, phone_number, email, logo_url, primary_color, secondary_color, created_at, updated_at, deleted_at FROM schools
 ORDER BY school_name
 `
 
@@ -6941,6 +7433,63 @@ func (q *Queries) ListSchools(ctx context.Context) ([]School, error) {
 			&i.SecondaryColor,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTeacherSubjectsBySchool = `-- name: ListTeacherSubjectsBySchool :many
+SELECT ts.teacher_id, s.subject_id, s.school_id, s.subject_name, s.description, s.double_period_required, s.lab_period_required, s.max_online_percentage, s.created_at, s.updated_at, s.deleted_at
+FROM teacher_subjects ts
+JOIN subjects s ON ts.subject_id = s.subject_id
+WHERE s.school_id = $1
+`
+
+type ListTeacherSubjectsBySchoolRow struct {
+	TeacherID            uuid.UUID
+	SubjectID            uuid.UUID
+	SchoolID             uuid.UUID
+	SubjectName          string
+	Description          sql.NullString
+	DoublePeriodRequired bool
+	LabPeriodRequired    bool
+	MaxOnlinePercentage  sql.NullString
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	DeletedAt            sql.NullTime
+}
+
+func (q *Queries) ListTeacherSubjectsBySchool(ctx context.Context, schoolID uuid.UUID) ([]ListTeacherSubjectsBySchoolRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTeacherSubjectsBySchool, schoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTeacherSubjectsBySchoolRow
+	for rows.Next() {
+		var i ListTeacherSubjectsBySchoolRow
+		if err := rows.Scan(
+			&i.TeacherID,
+			&i.SubjectID,
+			&i.SchoolID,
+			&i.SubjectName,
+			&i.Description,
+			&i.DoublePeriodRequired,
+			&i.LabPeriodRequired,
+			&i.MaxOnlinePercentage,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -7051,12 +7600,18 @@ func (q *Queries) ListTransferRequests(ctx context.Context, arg ListTransferRequ
 }
 
 const listUsersBySchool = `-- name: ListUsersBySchool :many
-SELECT u.user_id, u.school_id, u.role_id, u.first_name, u.last_name, u.email, u.contact_email, u.firebase_uid, u.password_hash, u.phone_number, u.date_of_birth, u.gender, u.profile_picture_url, u.is_active, u.created_at, u.updated_at, r.role_name
+SELECT u.user_id, u.school_id, u.role_id, u.first_name, u.last_name, u.email, u.contact_email, u.firebase_uid, u.password_hash, u.phone_number, u.date_of_birth, u.gender, u.profile_picture_url, u.is_active, u.created_at, u.updated_at, u.deleted_at, u.search_vector, r.role_name
 FROM users u
 JOIN roles r ON u.role_id = r.role_id
 WHERE u.school_id = $1
+  AND ($2::text IS NULL OR u.search_vector @@ websearch_to_tsquery('english', $2))
 ORDER BY u.last_name, u.first_name
 `
+
+type ListUsersBySchoolParams struct {
+	SchoolID uuid.NullUUID
+	Query    sql.NullString
+}
 
 type ListUsersBySchoolRow struct {
 	UserID            uuid.UUID
@@ -7075,12 +7630,14 @@ type ListUsersBySchoolRow struct {
 	IsActive          bool
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	DeletedAt         sql.NullTime
+	SearchVector      interface{}
 	RoleName          string
 }
 
 // Users: ListBySchool, GetStudentProfileByUserID, GetParentProfileByUserID
-func (q *Queries) ListUsersBySchool(ctx context.Context, schoolID uuid.NullUUID) ([]ListUsersBySchoolRow, error) {
-	rows, err := q.db.QueryContext(ctx, listUsersBySchool, schoolID)
+func (q *Queries) ListUsersBySchool(ctx context.Context, arg ListUsersBySchoolParams) ([]ListUsersBySchoolRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUsersBySchool, arg.SchoolID, arg.Query)
 	if err != nil {
 		return nil, err
 	}
@@ -7105,6 +7662,8 @@ func (q *Queries) ListUsersBySchool(ctx context.Context, schoolID uuid.NullUUID)
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.SearchVector,
 			&i.RoleName,
 		); err != nil {
 			return nil, err
@@ -7375,7 +7934,7 @@ const updateClassRepresentative = `-- name: UpdateClassRepresentative :one
 UPDATE class_representatives
 SET can_communicate_teacher = $2, can_communicate_department_head = $3, updated_at = CURRENT_TIMESTAMP
 WHERE class_rep_id = $1
-RETURNING class_rep_id, student_user_id, academic_class_id, can_communicate_teacher, can_communicate_department_head, created_at, updated_at
+RETURNING class_rep_id, student_user_id, academic_class_id, can_communicate_teacher, can_communicate_department_head, created_at, updated_at, deleted_at
 `
 
 type UpdateClassRepresentativeParams struct {
@@ -7395,6 +7954,7 @@ func (q *Queries) UpdateClassRepresentative(ctx context.Context, arg UpdateClass
 		&i.CanCommunicateDepartmentHead,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -7403,7 +7963,7 @@ const updateDepartment = `-- name: UpdateDepartment :one
 UPDATE departments
 SET department_name = $3, head_of_department_id = $4, deputy_head_of_department_id = $5, updated_at = CURRENT_TIMESTAMP
 WHERE department_id = $1 AND school_id = $2
-RETURNING department_id, school_id, department_name, head_of_department_id, deputy_head_of_department_id, created_at, updated_at
+RETURNING department_id, school_id, department_name, head_of_department_id, deputy_head_of_department_id, created_at, updated_at, deleted_at
 `
 
 type UpdateDepartmentParams struct {
@@ -7431,6 +7991,7 @@ func (q *Queries) UpdateDepartment(ctx context.Context, arg UpdateDepartmentPara
 		&i.DeputyHeadOfDepartmentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -7456,7 +8017,7 @@ const updateEvent = `-- name: UpdateEvent :one
 UPDATE events
 SET title = $3, description = $4, event_date = $5, end_date = $6, location = $7, event_type = $8, organizer_id = $9, is_public = $10, updated_at = CURRENT_TIMESTAMP
 WHERE event_id = $1 AND school_id = $2
-RETURNING event_id, school_id, title, description, event_date, end_date, location, event_type, organizer_id, is_public, created_at, updated_at
+RETURNING event_id, school_id, title, description, event_date, end_date, location, event_type, organizer_id, is_public, created_at, updated_at, deleted_at
 `
 
 type UpdateEventParams struct {
@@ -7499,6 +8060,7 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Event
 		&i.IsPublic,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -7507,7 +8069,7 @@ const updateExternalCertification = `-- name: UpdateExternalCertification :one
 UPDATE external_certifications
 SET name = $2, issuer = $3, credential_id = $4, verification_url = $5, issue_date = $6, expiry_date = $7, is_verified = $8, updated_at = CURRENT_TIMESTAMP
 WHERE cert_id = $1
-RETURNING cert_id, student_id, name, issuer, credential_id, verification_url, issue_date, expiry_date, is_verified, created_at, updated_at
+RETURNING cert_id, student_id, name, issuer, credential_id, verification_url, issue_date, expiry_date, is_verified, created_at, updated_at, deleted_at
 `
 
 type UpdateExternalCertificationParams struct {
@@ -7545,6 +8107,7 @@ func (q *Queries) UpdateExternalCertification(ctx context.Context, arg UpdateExt
 		&i.IsVerified,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -7553,7 +8116,7 @@ const updateFeedback = `-- name: UpdateFeedback :one
 UPDATE feedback
 SET subject = $2, message = $3, rating = $4, feedback_type = $5, status = $6, updated_at = CURRENT_TIMESTAMP
 WHERE feedback_id = $1
-RETURNING feedback_id, school_id, user_id, subject, message, rating, feedback_type, status, submitted_at, created_at, updated_at
+RETURNING feedback_id, school_id, user_id, subject, message, rating, feedback_type, status, submitted_at, created_at, updated_at, deleted_at
 `
 
 type UpdateFeedbackParams struct {
@@ -7588,6 +8151,7 @@ func (q *Queries) UpdateFeedback(ctx context.Context, arg UpdateFeedbackParams) 
 		&i.SubmittedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -7645,7 +8209,7 @@ const updateLessonPlan = `-- name: UpdateLessonPlan :one
 UPDATE lesson_plans
 SET teacher_id = $3, title = $4, content = $5, class_id = $6, date_covered = $7, updated_at = CURRENT_TIMESTAMP
 WHERE lesson_plan_id = $1 AND school_id = $2
-RETURNING lesson_plan_id, school_id, teacher_id, class_id, subject_id, title, topic, lesson_number, objectives, content, assessment_questions, online_meeting_link, date_covered, created_at, updated_at
+RETURNING lesson_plan_id, school_id, teacher_id, class_id, subject_id, title, topic, lesson_number, objectives, content, assessment_questions, online_meeting_link, date_covered, created_at, updated_at, deleted_at
 `
 
 type UpdateLessonPlanParams struct {
@@ -7685,6 +8249,7 @@ func (q *Queries) UpdateLessonPlan(ctx context.Context, arg UpdateLessonPlanPara
 		&i.DateCovered,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -7693,7 +8258,7 @@ const updateMeeting = `-- name: UpdateMeeting :one
 UPDATE meetings
 SET title = $3, agenda = $4, meeting_date = $5, duration_minutes = $6, location = $7, meeting_type = $8, organizer_id = $9, updated_at = CURRENT_TIMESTAMP
 WHERE meeting_id = $1 AND school_id = $2
-RETURNING meeting_id, school_id, title, agenda, meeting_date, duration_minutes, location, meeting_type, organizer_id, created_at, updated_at
+RETURNING meeting_id, school_id, title, agenda, meeting_date, duration_minutes, location, meeting_type, organizer_id, created_at, updated_at, deleted_at
 `
 
 type UpdateMeetingParams struct {
@@ -7733,6 +8298,7 @@ func (q *Queries) UpdateMeeting(ctx context.Context, arg UpdateMeetingParams) (M
 		&i.OrganizerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -7741,7 +8307,7 @@ const updateNewsletter = `-- name: UpdateNewsletter :one
 UPDATE newsletters
 SET title = $2, content = $3, target_schools = $4, updated_at = CURRENT_TIMESTAMP
 WHERE newsletter_id = $1
-RETURNING newsletter_id, title, content, sent_at, sent_by_user_id, target_schools, attachments, created_at, updated_at
+RETURNING newsletter_id, title, content, sent_at, sent_by_user_id, target_schools, attachments, created_at, updated_at, deleted_at
 `
 
 type UpdateNewsletterParams struct {
@@ -7769,6 +8335,7 @@ func (q *Queries) UpdateNewsletter(ctx context.Context, arg UpdateNewsletterPara
 		&i.Attachments,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -7777,7 +8344,7 @@ const updateOnlineClassSession = `-- name: UpdateOnlineClassSession :one
 UPDATE online_class_sessions
 SET teacher_id = $3, session_title = $4, start_time = $5, end_time = $6, meeting_link = $7, description = $8, recording_link = $9, updated_at = CURRENT_TIMESTAMP
 WHERE session_id = $1 AND school_id = $2
-RETURNING session_id, school_id, class_id, teacher_id, session_title, start_time, end_time, meeting_link, description, recording_link, created_at, updated_at
+RETURNING session_id, school_id, class_id, teacher_id, session_title, start_time, end_time, meeting_link, description, recording_link, created_at, updated_at, deleted_at
 `
 
 type UpdateOnlineClassSessionParams struct {
@@ -7818,6 +8385,7 @@ func (q *Queries) UpdateOnlineClassSession(ctx context.Context, arg UpdateOnline
 		&i.RecordingLink,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -7875,38 +8443,11 @@ func (q *Queries) UpdateQuiz(ctx context.Context, arg UpdateQuizParams) (Quiz, e
 	return i, err
 }
 
-const updateQuizSubmissionGrade = `-- name: UpdateQuizSubmissionGrade :one
-UPDATE quiz_submissions
-SET score = $2, status = $3, updated_at = CURRENT_TIMESTAMP
-WHERE submission_id = $1
-RETURNING submission_id, quiz_id, student_id, score, submitted_at, status
-`
-
-type UpdateQuizSubmissionGradeParams struct {
-	SubmissionID uuid.UUID
-	Score        sql.NullString
-	Status       string
-}
-
-func (q *Queries) UpdateQuizSubmissionGrade(ctx context.Context, arg UpdateQuizSubmissionGradeParams) (QuizSubmission, error) {
-	row := q.db.QueryRowContext(ctx, updateQuizSubmissionGrade, arg.SubmissionID, arg.Score, arg.Status)
-	var i QuizSubmission
-	err := row.Scan(
-		&i.SubmissionID,
-		&i.QuizID,
-		&i.StudentID,
-		&i.Score,
-		&i.SubmittedAt,
-		&i.Status,
-	)
-	return i, err
-}
-
 const updateRoom = `-- name: UpdateRoom :one
 UPDATE rooms
 SET room_name = $3, capacity = $4, room_type = $5, department_id = $6, updated_at = CURRENT_TIMESTAMP
 WHERE room_id = $1 AND school_id = $2
-RETURNING room_id, school_id, room_name, capacity, room_type, department_id, created_at, updated_at
+RETURNING room_id, school_id, room_name, capacity, room_type, department_id, created_at, updated_at, deleted_at
 `
 
 type UpdateRoomParams struct {
@@ -7937,6 +8478,7 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) (Room, e
 		&i.DepartmentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -7989,7 +8531,7 @@ const updateSchoolStatus = `-- name: UpdateSchoolStatus :one
 UPDATE schools
 SET status = $2, updated_at = CURRENT_TIMESTAMP
 WHERE school_id = $1
-RETURNING school_id, school_name, subdomain, status, school_initial, address, phone_number, email, logo_url, primary_color, secondary_color, created_at, updated_at
+RETURNING school_id, school_name, subdomain, status, school_initial, address, phone_number, email, logo_url, primary_color, secondary_color, created_at, updated_at, deleted_at
 `
 
 type UpdateSchoolStatusParams struct {
@@ -8014,6 +8556,7 @@ func (q *Queries) UpdateSchoolStatus(ctx context.Context, arg UpdateSchoolStatus
 		&i.SecondaryColor,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -8022,7 +8565,7 @@ const updateStudentCourseProgress = `-- name: UpdateStudentCourseProgress :one
 UPDATE student_course_progress
 SET progress_percentage = $2, last_activity_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 WHERE progress_id = $1
-RETURNING progress_id, enrollment_id, progress_percentage, last_activity_at, updated_at
+RETURNING progress_id, enrollment_id, progress_percentage, last_activity_at, updated_at, deleted_at
 `
 
 type UpdateStudentCourseProgressParams struct {
@@ -8039,6 +8582,7 @@ func (q *Queries) UpdateStudentCourseProgress(ctx context.Context, arg UpdateStu
 		&i.ProgressPercentage,
 		&i.LastActivityAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -8078,7 +8622,7 @@ const updateSubject = `-- name: UpdateSubject :one
 UPDATE subjects
 SET subject_name = $2, description = $3, double_period_required = $4, lab_period_required = $5, max_online_percentage = $6, updated_at = CURRENT_TIMESTAMP
 WHERE subject_id = $1 AND school_id = $7
-RETURNING subject_id, school_id, subject_name, description, double_period_required, lab_period_required, max_online_percentage, created_at, updated_at
+RETURNING subject_id, school_id, subject_name, description, double_period_required, lab_period_required, max_online_percentage, created_at, updated_at, deleted_at
 `
 
 type UpdateSubjectParams struct {
@@ -8112,6 +8656,7 @@ func (q *Queries) UpdateSubject(ctx context.Context, arg UpdateSubjectParams) (S
 		&i.MaxOnlinePercentage,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -8150,7 +8695,7 @@ const updateTeacherAvailability = `-- name: UpdateTeacherAvailability :one
 UPDATE teacher_availability
 SET teacher_id = $2, day_of_week = $3, start_time = $4, end_time = $5, is_recurring = $6, notes = $7, updated_at = CURRENT_TIMESTAMP
 WHERE availability_id = $1
-RETURNING availability_id, teacher_id, day_of_week, start_time, end_time, is_recurring, notes, created_at, updated_at
+RETURNING availability_id, teacher_id, day_of_week, start_time, end_time, is_recurring, notes, created_at, updated_at, deleted_at
 `
 
 type UpdateTeacherAvailabilityParams struct {
@@ -8184,6 +8729,7 @@ func (q *Queries) UpdateTeacherAvailability(ctx context.Context, arg UpdateTeach
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -8192,7 +8738,7 @@ const updateTeacherWorkload = `-- name: UpdateTeacherWorkload :one
 UPDATE teacher_workloads
 SET max_hours_per_week = $2, current_hours_per_week = $3, updated_at = CURRENT_TIMESTAMP
 WHERE workload_id = $1
-RETURNING workload_id, teacher_id, max_hours_per_week, current_hours_per_week, created_at, updated_at
+RETURNING workload_id, teacher_id, max_hours_per_week, current_hours_per_week, created_at, updated_at, deleted_at
 `
 
 type UpdateTeacherWorkloadParams struct {
@@ -8211,6 +8757,7 @@ func (q *Queries) UpdateTeacherWorkload(ctx context.Context, arg UpdateTeacherWo
 		&i.CurrentHoursPerWeek,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -8219,7 +8766,7 @@ const updateTranscript = `-- name: UpdateTranscript :one
 UPDATE transcripts
 SET academic_year = $3, cumulative_gpa = $4, transcript_data = $5, updated_at = CURRENT_TIMESTAMP
 WHERE transcript_id = $1 AND school_id = $2
-RETURNING transcript_id, school_id, student_id, academic_year, cumulative_gpa, transcript_data, issued_at, issued_by_user_id, created_at, updated_at
+RETURNING transcript_id, school_id, student_id, academic_year, cumulative_gpa, transcript_data, issued_at, issued_by_user_id, created_at, updated_at, deleted_at
 `
 
 type UpdateTranscriptParams struct {
@@ -8250,6 +8797,7 @@ func (q *Queries) UpdateTranscript(ctx context.Context, arg UpdateTranscriptPara
 		&i.IssuedByUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -8287,6 +8835,56 @@ func (q *Queries) UpdateTransferRequestStatus(ctx context.Context, arg UpdateTra
 		&i.RequestDate,
 		&i.CompletionDate,
 		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertStudentRiskScore = `-- name: UpsertStudentRiskScore :one
+INSERT INTO student_risk_scores (
+    school_id, student_id, attendance_rate, average_grade, risk_score, risk_level, last_calculated
+) VALUES (
+    $1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP
+)
+ON CONFLICT (student_id) DO UPDATE SET
+    attendance_rate = EXCLUDED.attendance_rate,
+    average_grade = EXCLUDED.average_grade,
+    risk_score = EXCLUDED.risk_score,
+    risk_level = EXCLUDED.risk_level,
+    last_calculated = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING risk_score_id, school_id, student_id, attendance_rate, average_grade, risk_score, risk_level, last_calculated, created_at, updated_at
+`
+
+type UpsertStudentRiskScoreParams struct {
+	SchoolID       uuid.UUID
+	StudentID      uuid.UUID
+	AttendanceRate string
+	AverageGrade   string
+	RiskScore      int32
+	RiskLevel      RiskLevel
+}
+
+func (q *Queries) UpsertStudentRiskScore(ctx context.Context, arg UpsertStudentRiskScoreParams) (StudentRiskScore, error) {
+	row := q.db.QueryRowContext(ctx, upsertStudentRiskScore,
+		arg.SchoolID,
+		arg.StudentID,
+		arg.AttendanceRate,
+		arg.AverageGrade,
+		arg.RiskScore,
+		arg.RiskLevel,
+	)
+	var i StudentRiskScore
+	err := row.Scan(
+		&i.RiskScoreID,
+		&i.SchoolID,
+		&i.StudentID,
+		&i.AttendanceRate,
+		&i.AverageGrade,
+		&i.RiskScore,
+		&i.RiskLevel,
+		&i.LastCalculated,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

@@ -13,7 +13,8 @@ CREATE TABLE schools (
   primary_color   TEXT,
   secondary_color TEXT,
   created_at      TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at      TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at      TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at      TIMESTAMPTZ(6)
 );
 
 CREATE TABLE roles (
@@ -39,7 +40,8 @@ CREATE TABLE users (
   profile_picture_url TEXT,
   is_active           BOOLEAN NOT NULL DEFAULT TRUE,
   created_at          TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at          TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at          TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deleted_at          TIMESTAMPTZ(6)
 );
 
 CREATE TABLE applications (

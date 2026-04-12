@@ -98,7 +98,7 @@ WHERE (al.school_id = sqlc.narg('school_id') OR sqlc.arg('is_super_admin')::bool
   AND (sqlc.narg('user_id')::uuid IS NULL OR al.user_id = sqlc.narg('user_id'))
   AND (sqlc.narg('entity_type')::text IS NULL OR al.entity_type = sqlc.narg('entity_type'))
   AND (sqlc.narg('entity_id')::uuid IS NULL OR al.entity_id = sqlc.narg('entity_id'))
-  AND (sqlc.narg('action')::text IS NULL OR al.action LIKE '%' || sqlc.narg('action')::text || '%')
+  AND (sqlc.narg('query')::text IS NULL OR al.search_vector @@ websearch_to_tsquery('english', sqlc.narg('query')))
 ORDER BY al.logged_at DESC;
 
 -- Academic Structure
@@ -1245,6 +1245,10 @@ SELECT * FROM timetables
 WHERE school_id = $1
 ORDER BY created_at DESC;
 
+-- name: GetTimetableByID :one
+SELECT * FROM timetables
+WHERE timetable_id = $1 AND school_id = $2 LIMIT 1;
+
 -- name: CreateTimetable :one
 INSERT INTO timetables (
   school_id, academic_year, semester, title, description, is_active
@@ -1252,6 +1256,53 @@ INSERT INTO timetables (
   $1, $2, $3, $4, $5, $6
 )
 RETURNING *;
+
+-- Scheduling Engine Queries
+-- name: GetCourseSubjects :many
+SELECT s.*
+FROM subjects s
+JOIN course_subjects cs ON s.subject_id = cs.subject_id
+WHERE cs.course_id = $1;
+
+-- name: GetTeacherSubjects :many
+SELECT s.*, ts.teacher_id
+FROM subjects s
+JOIN teacher_subjects ts ON s.subject_id = ts.subject_id
+WHERE ts.teacher_id = $1;
+
+-- name: ListTeacherSubjectsBySchool :many
+SELECT ts.teacher_id, s.*
+FROM teacher_subjects ts
+JOIN subjects s ON ts.subject_id = s.subject_id
+WHERE s.school_id = $1;
+
+-- name: GetClassesForScheduling :many
+SELECT ac.*, c.course_name,
+       (SELECT COUNT(*) FROM enrollments e WHERE e.class_id = ac.class_id) as enrollment_count
+FROM academic_classes ac
+JOIN courses c ON ac.course_id = c.course_id
+WHERE ac.school_id = $1 AND ac.academic_year = $2 AND (ac.semester = $3 OR ac.semester IS NULL);
+-- name: GetTimetableEntries :many
+SELECT te.*, ac.class_name, s.subject_name, u.first_name as teacher_first_name, u.last_name as teacher_last_name, r.room_name
+FROM timetable_entries te
+JOIN academic_classes ac ON te.class_id = ac.class_id
+JOIN subjects s ON te.subject_id = s.subject_id
+JOIN users u ON te.teacher_id = u.user_id
+JOIN rooms r ON te.room_id = r.room_id
+WHERE te.timetable_id = $1
+ORDER BY te.day_of_week, te.start_time;
+
+-- name: CreateTimetableEntry :one
+INSERT INTO timetable_entries (
+  timetable_id, class_id, subject_id, teacher_id, room_id, day_of_week, start_time, end_time
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8
+)
+RETURNING *;
+
+-- name: DeleteTimetableEntriesByTimetable :exec
+DELETE FROM timetable_entries
+WHERE timetable_id = $1;
 
 -- Transcripts
 -- name: CreateTranscript :one
@@ -1311,6 +1362,7 @@ SELECT u.*, r.role_name
 FROM users u
 JOIN roles r ON u.role_id = r.role_id
 WHERE u.school_id = $1
+  AND (sqlc.narg('query')::text IS NULL OR u.search_vector @@ websearch_to_tsquery('english', sqlc.narg('query')))
 ORDER BY u.last_name, u.first_name;
 
 -- name: GetStudentProfileByUserID :one
@@ -1336,7 +1388,57 @@ RETURNING *;
 DELETE FROM quizzes
 WHERE quiz_id = $1 AND school_id = $2;
 
--- Schools: GetByNameOrSubdomain, GetByInitial, GetWithAdmin, UpdateStatus
+-- Early Warning System
+-- name: CalculateStudentMetrics :many
+SELECT
+    sp.user_id,
+    sp.school_id,
+    COALESCE(
+        (SELECT (COUNT(CASE WHEN ar.status = 'Present' THEN 1 END)::DECIMAL / NULLIF(COUNT(*), 0)) * 100
+         FROM attendance_records ar
+         WHERE ar.student_id = sp.user_id),
+        100.00
+    )::DECIMAL(5,2) as attendance_rate,
+    COALESCE(
+        (SELECT AVG(g.score)
+         FROM grades g
+         JOIN submissions s ON g.submission_id = s.submission_id
+         WHERE s.student_id = sp.user_id),
+        0.00
+    )::DECIMAL(5,2) as average_grade
+FROM student_profiles sp
+WHERE sp.school_id = $1;
+
+-- name: UpsertStudentRiskScore :one
+INSERT INTO student_risk_scores (
+    school_id, student_id, attendance_rate, average_grade, risk_score, risk_level, last_calculated
+) VALUES (
+    $1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP
+)
+ON CONFLICT (student_id) DO UPDATE SET
+    attendance_rate = EXCLUDED.attendance_rate,
+    average_grade = EXCLUDED.average_grade,
+    risk_score = EXCLUDED.risk_score,
+    risk_level = EXCLUDED.risk_level,
+    last_calculated = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+RETURNING *;
+
+-- name: ListAtRiskStudents :many
+SELECT
+    srs.*,
+    u.first_name,
+    u.last_name,
+    u.email,
+    sp.enrollment_number,
+    sp.current_grade_level
+FROM student_risk_scores srs
+JOIN users u ON srs.student_id = u.user_id
+JOIN student_profiles sp ON srs.student_id = sp.user_id
+WHERE srs.school_id = $1
+  AND (sqlc.narg('risk_level')::risk_level IS NULL OR srs.risk_level = sqlc.narg('risk_level'))
+  AND srs.risk_level != 'Low'
+ORDER BY srs.risk_score DESC;
 -- name: GetSchoolByNameOrSubdomain :one
 SELECT * FROM schools
 WHERE school_name = sqlc.arg('school_name') OR subdomain = sqlc.arg('subdomain')
