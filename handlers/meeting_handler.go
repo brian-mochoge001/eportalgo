@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -9,16 +8,18 @@ import (
 
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/middleware"
+	"github.com/brian-mochoge001/eportalgo/services"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
 type MeetingHandler struct {
-	Queries *db.Queries
+	Queries        *db.Queries
+	MeetingService *services.MeetingService
 }
 
-func NewMeetingHandler(q *db.Queries) *MeetingHandler {
-	return &MeetingHandler{Queries: q}
+func NewMeetingHandler(q *db.Queries, s *services.MeetingService) *MeetingHandler {
+	return &MeetingHandler{Queries: q, MeetingService: s}
 }
 
 func (h *MeetingHandler) CreateMeeting(w http.ResponseWriter, r *http.Request) {
@@ -41,56 +42,46 @@ func (h *MeetingHandler) CreateMeeting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Title == "" || req.MeetingDate == "" || req.MeetingType == "" {
-		middleware.ValidationError(w, "Title, meeting date, and meeting type are required", nil)
-		return
-	}
-
 	meetingDate, err := time.Parse(time.RFC3339, req.MeetingDate)
 	if err != nil {
 		middleware.ValidationError(w, "Invalid meeting date format", err)
 		return
 	}
 
-	var durationMinutes sql.NullInt32
-	if req.DurationMinutes != "" {
-		if d, err := strconv.Atoi(req.DurationMinutes); err == nil {
-			durationMinutes = sql.NullInt32{Int32: int32(d), Valid: true}
-		}
+	var durationMinutes int32
+	if d, err := strconv.Atoi(req.DurationMinutes); err == nil {
+		durationMinutes = int32(d)
 	}
 
-	organizerID := uuid.NullUUID{UUID: userCtx.UserID, Valid: true}
+	organizerID := userCtx.UserID
 	if req.OrganizerID != "" {
 		if id, err := uuid.Parse(req.OrganizerID); err == nil {
-			organizerID = uuid.NullUUID{UUID: id, Valid: true}
+			organizerID = id
 		}
 	}
 
-	meeting, err := h.Queries.CreateMeeting(r.Context(), db.CreateMeetingParams{
+	var attendeeIDs []uuid.UUID
+	for _, idStr := range req.Attendees {
+		if id, err := uuid.Parse(idStr); err == nil {
+			attendeeIDs = append(attendeeIDs, id)
+		}
+	}
+
+	meeting, err := h.MeetingService.CreateMeeting(r.Context(), services.CreateMeetingParams{
 		SchoolID:        schoolID,
 		Title:           req.Title,
-		Agenda:          sql.NullString{String: req.Agenda, Valid: req.Agenda != ""},
+		Agenda:          req.Agenda,
 		MeetingDate:     meetingDate,
 		DurationMinutes: durationMinutes,
-		Location:        sql.NullString{String: req.Location, Valid: req.Location != ""},
+		Location:        req.Location,
 		MeetingType:     req.MeetingType,
 		OrganizerID:     organizerID,
+		AttendeeIDs:     attendeeIDs,
 	})
 
 	if err != nil {
-		middleware.InternalError(w, "Could not create meeting", err)
+		middleware.InternalError(w, err.Error(), err)
 		return
-	}
-
-	// Add attendees
-	for _, attendeeIDStr := range req.Attendees {
-		if attendeeID, err := uuid.Parse(attendeeIDStr); err == nil {
-			h.Queries.AddMeetingAttendee(r.Context(), db.AddMeetingAttendeeParams{
-				MeetingID: meeting.MeetingID,
-				UserID:    attendeeID,
-				SchoolID:  schoolID,
-			})
-		}
 	}
 
 	w.WriteHeader(http.StatusCreated)
@@ -112,11 +103,7 @@ func (h *MeetingHandler) GetMeetings(w http.ResponseWriter, r *http.Request) {
 
 func (h *MeetingHandler) GetMeetingByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	meetingID, err := uuid.Parse(idStr)
-	if err != nil {
-		middleware.ValidationError(w, "Invalid meeting ID", err)
-		return
-	}
+	meetingID, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
@@ -145,11 +132,7 @@ func (h *MeetingHandler) GetMeetingByID(w http.ResponseWriter, r *http.Request) 
 
 func (h *MeetingHandler) UpdateMeeting(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	meetingID, err := uuid.Parse(idStr)
-	if err != nil {
-		middleware.ValidationError(w, "Invalid meeting ID", err)
-		return
-	}
+	meetingID, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
@@ -169,76 +152,49 @@ func (h *MeetingHandler) UpdateMeeting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existingMeeting, err := h.Queries.GetMeetingByID(r.Context(), db.GetMeetingByIDParams{
-		MeetingID: meetingID,
-		SchoolID:  schoolID,
-	})
-	if err != nil {
-		middleware.NotFoundError(w, "Meeting not found", err)
-		return
+	params := services.UpdateMeetingParams{
+		MeetingID:   meetingID,
+		SchoolID:    schoolID,
+		Title:       req.Title,
+		Agenda:      req.Agenda,
+		Location:    req.Location,
+		MeetingType: req.MeetingType,
 	}
 
-	params := db.UpdateMeetingParams{
-		MeetingID:       meetingID,
-		SchoolID:        schoolID,
-		Title:           existingMeeting.Title,
-		Agenda:          existingMeeting.Agenda,
-		MeetingDate:     existingMeeting.MeetingDate,
-		DurationMinutes: existingMeeting.DurationMinutes,
-		Location:        existingMeeting.Location,
-		MeetingType:     existingMeeting.MeetingType,
-		OrganizerID:     existingMeeting.OrganizerID,
-	}
-
-	if req.Title != "" {
-		params.Title = req.Title
-	}
-	if req.Agenda != "" {
-		params.Agenda = sql.NullString{String: req.Agenda, Valid: true}
-	}
 	if req.MeetingDate != "" {
 		if t, err := time.Parse(time.RFC3339, req.MeetingDate); err == nil {
-			params.MeetingDate = t
+			params.MeetingDate = &t
 		}
 	}
 	if req.DurationMinutes != "" {
 		if d, err := strconv.Atoi(req.DurationMinutes); err == nil {
-			params.DurationMinutes = sql.NullInt32{Int32: int32(d), Valid: true}
+			duration := int32(d)
+			params.DurationMinutes = &duration
 		}
-	}
-	if req.Location != "" {
-		params.Location = sql.NullString{String: req.Location, Valid: true}
-	}
-	if req.MeetingType != "" {
-		params.MeetingType = req.MeetingType
 	}
 	if req.OrganizerID != "" {
 		if id, err := uuid.Parse(req.OrganizerID); err == nil {
-			params.OrganizerID = uuid.NullUUID{UUID: id, Valid: true}
+			params.OrganizerID = &id
 		}
 	}
 
-	updatedMeeting, err := h.Queries.UpdateMeeting(r.Context(), params)
+	updated, err := h.MeetingService.UpdateMeeting(r.Context(), params)
 	if err != nil {
-		middleware.InternalError(w, "Could not update meeting", err)
+		middleware.InternalError(w, err.Error(), err)
 		return
 	}
 
-	json.NewEncoder(w).Encode(updatedMeeting)
+	json.NewEncoder(w).Encode(updated)
 }
 
 func (h *MeetingHandler) DeleteMeeting(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	meetingID, err := uuid.Parse(idStr)
-	if err != nil {
-		middleware.ValidationError(w, "Invalid meeting ID", err)
-		return
-	}
+	meetingID, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
-	err = h.Queries.DeleteMeeting(r.Context(), db.DeleteMeetingParams{
+	err := h.Queries.DeleteMeeting(r.Context(), db.DeleteMeetingParams{
 		MeetingID: meetingID,
 		SchoolID:  schoolID,
 	})
@@ -252,11 +208,7 @@ func (h *MeetingHandler) DeleteMeeting(w http.ResponseWriter, r *http.Request) {
 
 func (h *MeetingHandler) AddMeetingAttendees(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	meetingID, err := uuid.Parse(idStr)
-	if err != nil {
-		middleware.ValidationError(w, "Invalid meeting ID", err)
-		return
-	}
+	meetingID, _ := uuid.Parse(idStr)
 
 	var req struct {
 		UserIDs []string `json:"user_ids"`
@@ -285,11 +237,7 @@ func (h *MeetingHandler) AddMeetingAttendees(w http.ResponseWriter, r *http.Requ
 
 func (h *MeetingHandler) RemoveMeetingAttendees(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	meetingID, err := uuid.Parse(idStr)
-	if err != nil {
-		middleware.ValidationError(w, "Invalid meeting ID", err)
-		return
-	}
+	meetingID, _ := uuid.Parse(idStr)
 
 	var req struct {
 		UserIDs []string `json:"user_ids"`
@@ -315,6 +263,3 @@ func (h *MeetingHandler) RemoveMeetingAttendees(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Attendees removed successfully"})
 }
-
-
-

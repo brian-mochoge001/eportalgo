@@ -1,23 +1,24 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/middleware"
+	"github.com/brian-mochoge001/eportalgo/services"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
 type EventHandler struct {
-	Queries *db.Queries
+	Queries      *db.Queries
+	EventService *services.EventService
 }
 
-func NewEventHandler(q *db.Queries) *EventHandler {
-	return &EventHandler{Queries: q}
+func NewEventHandler(q *db.Queries, s *services.EventService) *EventHandler {
+	return &EventHandler{Queries: q, EventService: s}
 }
 
 func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
@@ -25,14 +26,14 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	schoolID := userCtx.SchoolID.UUID
 
 	var req struct {
-		Title       string    `json:"title"`
-		Description string    `json:"description"`
-		EventDate   string    `json:"event_date"`
-		EndDate     string    `json:"end_date"`
-		Location    string    `json:"location"`
-		EventType   string    `json:"event_type"`
-		OrganizerID string    `json:"organizer_id"`
-		IsPublic    *bool     `json:"is_public"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		StartTime   string `json:"start_time"` // We map this to EventDate
+		EndTime     string `json:"end_time"`   // We map this to EndDate
+		Location    string `json:"location"`
+		EventType   string `json:"event_type"`
+		OrganizerID string `json:"organizer_id"`
+		IsPublic    bool   `json:"is_public"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -40,54 +41,32 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Title == "" || req.EventDate == "" || req.EventType == "" {
-		middleware.ValidationError(w, "Title, event date, and event type are required", nil)
-		return
-	}
-
-	eventDate, err := time.Parse(time.RFC3339, req.EventDate)
-	if err != nil {
-		middleware.ValidationError(w, "Invalid event date format", err)
-		return
-	}
-
-	var endDate sql.NullTime
-	if req.EndDate != "" {
-		t, err := time.Parse(time.RFC3339, req.EndDate)
-		if err != nil {
-			middleware.ValidationError(w, "Invalid end date format", err)
-			return
-		}
-		endDate = sql.NullTime{Time: t, Valid: true}
-	}
-
-	organizerID := uuid.NullUUID{UUID: userCtx.UserID, Valid: true}
-	if req.OrganizerID != "" {
-		parsedID, err := uuid.Parse(req.OrganizerID)
-		if err == nil {
-			organizerID = uuid.NullUUID{UUID: parsedID, Valid: true}
+	eventDate, _ := time.Parse(time.RFC3339, req.StartTime)
+	var endDate *time.Time
+	if req.EndTime != "" {
+		if t, err := time.Parse(time.RFC3339, req.EndTime); err == nil {
+			endDate = &t
 		}
 	}
-
-	isPublic := true
-	if req.IsPublic != nil {
-		isPublic = *req.IsPublic
+	organizerID, _ := uuid.Parse(req.OrganizerID)
+	if organizerID == uuid.Nil {
+		organizerID = userCtx.UserID
 	}
 
-	event, err := h.Queries.CreateEvent(r.Context(), db.CreateEventParams{
+	event, err := h.EventService.CreateEvent(r.Context(), services.CreateEventParams{
 		SchoolID:    schoolID,
 		Title:       req.Title,
-		Description: sql.NullString{String: req.Description, Valid: req.Description != ""},
+		Description: req.Description,
 		EventDate:   eventDate,
 		EndDate:     endDate,
-		Location:    sql.NullString{String: req.Location, Valid: req.Location != ""},
+		Location:    req.Location,
 		EventType:   req.EventType,
 		OrganizerID: organizerID,
-		IsPublic:    isPublic,
+		IsPublic:    req.IsPublic,
 	})
 
 	if err != nil {
-		middleware.InternalError(w, "Could not create event", err)
+		middleware.InternalError(w, err.Error(), err)
 		return
 	}
 
@@ -110,11 +89,7 @@ func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 
 func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	eventID, err := uuid.Parse(idStr)
-	if err != nil {
-		middleware.ValidationError(w, "Invalid event ID", err)
-		return
-	}
+	eventID, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
@@ -133,11 +108,7 @@ func (h *EventHandler) GetEventByID(w http.ResponseWriter, r *http.Request) {
 
 func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	eventID, err := uuid.Parse(idStr)
-	if err != nil {
-		middleware.ValidationError(w, "Invalid event ID", err)
-		return
-	}
+	eventID, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
@@ -145,8 +116,8 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title       string `json:"title"`
 		Description string `json:"description"`
-		EventDate   string `json:"event_date"`
-		EndDate     string `json:"end_date"`
+		StartTime   string `json:"start_time"`
+		EndTime     string `json:"end_time"`
 		Location    string `json:"location"`
 		EventType   string `json:"event_type"`
 		OrganizerID string `json:"organizer_id"`
@@ -158,85 +129,49 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch existing event to get current values for partial updates if needed, 
-	// but UpdateEvent query in SQL seems to expect all fields.
-	existingEvent, err := h.Queries.GetEventByID(r.Context(), db.GetEventByIDParams{
-		EventID:  eventID,
-		SchoolID: schoolID,
-	})
-	if err != nil {
-		middleware.NotFoundError(w, "Event not found", err)
-		return
-	}
-
-	params := db.UpdateEventParams{
+	params := services.UpdateEventParams{
 		EventID:     eventID,
 		SchoolID:    schoolID,
-		Title:       existingEvent.Title,
-		Description: existingEvent.Description,
-		EventDate:   existingEvent.EventDate,
-		EndDate:     existingEvent.EndDate,
-		Location:    existingEvent.Location,
-		EventType:   existingEvent.EventType,
-		OrganizerID: existingEvent.OrganizerID,
-		IsPublic:    existingEvent.IsPublic,
+		Title:       req.Title,
+		Description: req.Description,
+		Location:    req.Location,
+		EventType:   req.EventType,
+		IsPublic:    req.IsPublic,
 	}
 
-	if req.Title != "" {
-		params.Title = req.Title
-	}
-	if req.Description != "" {
-		params.Description = sql.NullString{String: req.Description, Valid: true}
-	}
-	if req.EventDate != "" {
-		t, err := time.Parse(time.RFC3339, req.EventDate)
-		if err == nil {
-			params.EventDate = t
+	if req.StartTime != "" {
+		if t, err := time.Parse(time.RFC3339, req.StartTime); err == nil {
+			params.EventDate = &t
 		}
 	}
-	if req.EndDate != "" {
-		t, err := time.Parse(time.RFC3339, req.EndDate)
-		if err == nil {
-			params.EndDate = sql.NullTime{Time: t, Valid: true}
+	if req.EndTime != "" {
+		if t, err := time.Parse(time.RFC3339, req.EndTime); err == nil {
+			params.EndDate = &t
 		}
-	}
-	if req.Location != "" {
-		params.Location = sql.NullString{String: req.Location, Valid: true}
-	}
-	if req.EventType != "" {
-		params.EventType = req.EventType
 	}
 	if req.OrganizerID != "" {
-		parsedID, err := uuid.Parse(req.OrganizerID)
-		if err == nil {
-			params.OrganizerID = uuid.NullUUID{UUID: parsedID, Valid: true}
+		if id, err := uuid.Parse(req.OrganizerID); err == nil {
+			params.OrganizerID = &id
 		}
 	}
-	if req.IsPublic != nil {
-		params.IsPublic = *req.IsPublic
-	}
 
-	updatedEvent, err := h.Queries.UpdateEvent(r.Context(), params)
+	updated, err := h.EventService.UpdateEvent(r.Context(), params)
 	if err != nil {
-		middleware.InternalError(w, "Could not update event", err)
+		middleware.InternalError(w, err.Error(), err)
 		return
 	}
 
-	json.NewEncoder(w).Encode(updatedEvent)
+	json.NewEncoder(w).Encode(updated)
 }
 
 func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	eventID, err := uuid.Parse(idStr)
-	if err != nil {
-		middleware.ValidationError(w, "Invalid event ID", err)
-		return
-	}
+	eventID, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
-	err = h.Queries.DeleteEvent(r.Context(), db.DeleteEventParams{
+	err := h.Queries.DeleteEvent(r.Context(), db.DeleteEventParams{
 		EventID:  eventID,
 		SchoolID: schoolID,
 	})
@@ -247,6 +182,3 @@ func (h *EventHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
-
-
-

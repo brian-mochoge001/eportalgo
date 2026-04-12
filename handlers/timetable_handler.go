@@ -5,16 +5,17 @@ import (
 	"net/http"
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/middleware"
-	"github.com/brian-mochoge001/eportalgo/services/scheduler"
+	"github.com/brian-mochoge001/eportalgo/services"
 	"github.com/google/uuid"
 )
 
 type TimetableHandler struct {
-	Queries *db.Queries
+	Queries          *db.Queries
+	TimetableService *services.TimetableService
 }
 
-func NewTimetableHandler(q *db.Queries) *TimetableHandler {
-	return &TimetableHandler{Queries: q}
+func NewTimetableHandler(q *db.Queries, s *services.TimetableService) *TimetableHandler {
+	return &TimetableHandler{Queries: q, TimetableService: s}
 }
 
 func (h *TimetableHandler) GetTimetables(w http.ResponseWriter, r *http.Request) {
@@ -95,54 +96,16 @@ func (h *TimetableHandler) GenerateTimetable(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// 1. Get timetable details
-	timetable, err := h.Queries.GetTimetableByID(r.Context(), db.GetTimetableByIDParams{
-		TimetableID: req.TimetableID,
-		SchoolID:    schoolID,
-	})
-	if err != nil {
-		middleware.InternalError(w, "Could not find timetable", err)
-		return
-	}
-
-	// 2. Initialize scheduler
-	s := scheduler.NewScheduler(h.Queries, scheduler.Config{})
-
-	// 3. Generate
-	result, err := s.Generate(r.Context(), schoolID, timetable.AcademicYear, timetable.Semester.String)
+	fitness, err := h.TimetableService.GenerateAndSaveTimetable(r.Context(), req.TimetableID, schoolID)
 	if err != nil {
 		middleware.InternalError(w, "Scheduling failed", err)
 		return
 	}
 
-	// 4. Save results (delete old entries first)
-	err = h.Queries.DeleteTimetableEntriesByTimetable(r.Context(), req.TimetableID)
-	if err != nil {
-		middleware.InternalError(w, "Could not clear old entries", err)
-		return
-	}
-
-	for _, gene := range result.Genes {
-		_, err = h.Queries.CreateTimetableEntry(r.Context(), db.CreateTimetableEntryParams{
-			TimetableID: req.TimetableID,
-			ClassID:     gene.ClassID,
-			SubjectID:   gene.SubjectID,
-			TeacherID:   gene.TeacherID,
-			RoomID:      gene.RoomID,
-			DayOfWeek:   int32(gene.DayOfWeek),
-			StartTime:   gene.StartTime,
-			EndTime:     gene.EndTime,
-		})
-		if err != nil {
-			middleware.InternalError(w, "Could not save timetable entry", err)
-			return
-		}
-	}
-
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "success",
-		"fitness": result.Fitness,
+		"fitness": fitness,
 		"message": "Timetable generated successfully",
 	})
 }

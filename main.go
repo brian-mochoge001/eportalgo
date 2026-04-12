@@ -12,6 +12,7 @@ import (
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/handlers"
 	custom_mw "github.com/brian-mochoge001/eportalgo/middleware"
+	"github.com/brian-mochoge001/eportalgo/services"
 	"github.com/brian-mochoge001/eportalgo/worker"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -89,39 +90,56 @@ func main() {
 		IsDevelopment:         os.Getenv("NODE_ENV") != "production",
 	})
 
+	// Initialize Services
+	schoolService := services.NewSchoolService(queries, firebaseAuth, redisClient)
+	authService := services.NewAuthService(queries, firebaseAuth)
+	studentService := services.NewStudentService(queries, conn)
+	assignmentService := services.NewAssignmentService(queries, asynqClient)
+	timetableService := services.NewTimetableService(queries, conn)
+	userService := services.NewUserService(queries, conn, firebaseAuth)
+	meetingService := services.NewMeetingService(queries, conn)
+	courseService := services.NewCourseService(queries, conn)
+	eventService := services.NewEventService(queries, conn)
+	lessonPlanService := services.NewLessonPlanService(queries, conn)
+	classService := services.NewClassService(queries, conn)
+	attendanceService := services.NewAttendanceService(queries)
+	financeService := services.NewFinanceService(queries, conn)
+	quizService := services.NewQuizService(queries, conn)
+	reportingService := services.NewReportingService(queries)
+
 	// Initialize Handlers
-	schoolHandler := handlers.NewSchoolHandler(queries, firebaseAuth, redisClient)
-	authHandler := handlers.NewAuthHandler(queries, firebaseAuth)
-	userHandler := handlers.NewUserHandler(queries, conn, app)
-	courseHandler := handlers.NewCourseHandler(queries)
+	schoolHandler := handlers.NewSchoolHandler(queries, schoolService, redisClient)
+	authHandler := handlers.NewAuthHandler(queries, authService, firebaseAuth)
+	userHandler := handlers.NewUserHandler(queries, userService)
+	courseHandler := handlers.NewCourseHandler(queries, courseService)
 	departmentHandler := handlers.NewDepartmentHandler(queries)
-	classHandler := handlers.NewClassHandler(queries, conn)
+	classHandler := handlers.NewClassHandler(queries, classService)
 	subjectHandler := handlers.NewSubjectHandler(queries)
-	enrollmentHandler := handlers.NewEnrollmentHandler(queries, conn)
-	attendanceHandler := handlers.NewAttendanceHandler(queries)
-	assignmentHandler := handlers.NewAssignmentHandler(queries, asynqClient)
+	enrollmentHandler := handlers.NewEnrollmentHandler(queries, studentService)
+	attendanceHandler := handlers.NewAttendanceHandler(queries, attendanceService)
+	assignmentHandler := handlers.NewAssignmentHandler(queries, assignmentService)
 	auditLogHandler := handlers.NewAuditLogHandler(queries)
 	studentRiskHandler := handlers.NewStudentRiskHandler(queries, asynqClient)
 	badgeHandler := handlers.NewBadgeHandler(queries)
 	billingContactHandler := handlers.NewBillingContactHandler(queries, conn)
 	chatHandler := handlers.NewChatHandler(queries)
 	classRepresentativeHandler := handlers.NewClassRepresentativeHandler(queries, conn)
-	eventHandler := handlers.NewEventHandler(queries)
+	eventHandler := handlers.NewEventHandler(queries, eventService)
 	externalCertificationHandler := handlers.NewExternalCertificationHandler(queries)
 	feeHandler := handlers.NewFeeHandler(queries)
 	feedbackHandler := handlers.NewFeedbackHandler(queries)
 	gradeHandler := handlers.NewGradeHandler(queries)
 	groupHandler := handlers.NewGroupHandler(queries, conn)
 	learningMaterialHandler := handlers.NewLearningMaterialHandler(queries)
-	lessonPlanHandler := handlers.NewLessonPlanHandler(queries)
-	meetingHandler := handlers.NewMeetingHandler(queries)
+	lessonPlanHandler := handlers.NewLessonPlanHandler(queries, lessonPlanService)
+	meetingHandler := handlers.NewMeetingHandler(queries, meetingService)
 	newsletterHandler := handlers.NewNewsletterHandler(queries)
 	notificationHandler := handlers.NewNotificationHandler(queries)
 	onlineClassSessionHandler := handlers.NewOnlineClassSessionHandler(queries)
 	parentHandler := handlers.NewParentHandler(queries)
-	paymentHandler := handlers.NewPaymentHandler(queries, conn)
+	paymentHandler := handlers.NewPaymentHandler(queries, financeService)
 	quizHandler := handlers.NewQuizHandler(queries, conn)
-	quizSubmissionHandler := handlers.NewQuizSubmissionHandler(queries, conn)
+	quizSubmissionHandler := handlers.NewQuizSubmissionHandler(queries, quizService)
 	roomHandler := handlers.NewRoomHandler(queries)
 	schoolSettingHandler := handlers.NewSchoolSettingHandler(queries)
 	shortCourseGradeHandler := handlers.NewShortCourseGradeHandler(queries)
@@ -132,8 +150,8 @@ func main() {
 	teacherAvailabilityHandler := handlers.NewTeacherAvailabilityHandler(queries)
 	teacherHandler := handlers.NewTeacherHandler(queries)
 	teacherWorkloadHandler := handlers.NewTeacherWorkloadHandler(queries)
-	timetableHandler := handlers.NewTimetableHandler(queries)
-	transcriptHandler := handlers.NewTranscriptHandler(queries)
+	timetableHandler := handlers.NewTimetableHandler(queries, timetableService)
+	transcriptHandler := handlers.NewTranscriptHandler(queries, reportingService)
 	transferRequestHandler := handlers.NewTransferRequestHandler(queries)
 
 	// Set up router

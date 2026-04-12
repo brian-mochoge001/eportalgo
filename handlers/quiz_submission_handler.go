@@ -1,23 +1,23 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/middleware"
+	"github.com/brian-mochoge001/eportalgo/services"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
 type QuizSubmissionHandler struct {
-	Queries *db.Queries
-	DB      *sql.DB
+	Queries     *db.Queries
+	QuizService *services.QuizService
 }
 
-func NewQuizSubmissionHandler(q *db.Queries, d *sql.DB) *QuizSubmissionHandler {
-	return &QuizSubmissionHandler{Queries: q, DB: d}
+func NewQuizSubmissionHandler(q *db.Queries, s *services.QuizService) *QuizSubmissionHandler {
+	return &QuizSubmissionHandler{Queries: q, QuizService: s}
 }
 
 func (h *QuizSubmissionHandler) CreateQuizSubmission(w http.ResponseWriter, r *http.Request) {
@@ -39,45 +39,24 @@ func (h *QuizSubmissionHandler) CreateQuizSubmission(w http.ResponseWriter, r *h
 
 	quizID, _ := uuid.Parse(req.QuizID)
 
-	tx, err := h.DB.BeginTx(r.Context(), nil)
-	if err != nil {
-		middleware.InternalError(w, "Could not start transaction", err)
-		return
+	var answers []services.QuizAnswerRequest
+	for _, a := range req.Answers {
+		qid, _ := uuid.Parse(a.QuestionID)
+		answers = append(answers, services.QuizAnswerRequest{
+			QuestionID:        qid,
+			StudentAnswerText: a.StudentAnswerText,
+			SelectedOptionID:  toNullUUID(a.SelectedOptionID),
+		})
 	}
-	defer tx.Rollback()
 
-	qtx := h.Queries.WithTx(tx)
-
-	// Create Submission
-	submission, err := qtx.CreateQuizSubmission(r.Context(), db.CreateQuizSubmissionParams{
+	submission, err := h.QuizService.SubmitQuiz(r.Context(), services.QuizSubmissionRequest{
 		QuizID:    quizID,
 		StudentID: userCtx.UserID,
-		Status:    "completed",
+		Answers:   answers,
 	})
+
 	if err != nil {
-		middleware.InternalError(w, "Could not create submission", err)
-		return
-	}
-
-	// Create Answers
-	for _, aReq := range req.Answers {
-		questionID, _ := uuid.Parse(aReq.QuestionID)
-		selectedOptionID := toNullUUID(aReq.SelectedOptionID)
-
-		_, err = qtx.CreateQuizAnswer(r.Context(), db.CreateQuizAnswerParams{
-			QuizSubmissionID:  submission.SubmissionID,
-			QuestionID:        questionID,
-			StudentAnswerText: toNullString(aReq.StudentAnswerText),
-			SelectedOptionID:  selectedOptionID,
-		})
-		if err != nil {
-			middleware.InternalError(w, "Could not create answer", err)
-			return
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		middleware.InternalError(w, "Could not commit transaction", err)
+		middleware.InternalError(w, "Could not submit quiz", err)
 		return
 	}
 

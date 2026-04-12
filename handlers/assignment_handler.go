@@ -3,25 +3,23 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/middleware"
-	"github.com/brian-mochoge001/eportalgo/worker"
+	"github.com/brian-mochoge001/eportalgo/services"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
 )
 
 type AssignmentHandler struct {
-	Queries *db.Queries
-	Asynq   *asynq.Client
+	Queries           *db.Queries
+	AssignmentService *services.AssignmentService
 }
 
-func NewAssignmentHandler(q *db.Queries, asynqClient *asynq.Client) *AssignmentHandler {
-	return &AssignmentHandler{Queries: q, Asynq: asynqClient}
+func NewAssignmentHandler(q *db.Queries, s *services.AssignmentService) *AssignmentHandler {
+	return &AssignmentHandler{Queries: q, AssignmentService: s}
 }
 
 func (h *AssignmentHandler) GetAssignments(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +43,6 @@ func (h *AssignmentHandler) GetAssignments(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *AssignmentHandler) CreateAssignment(w http.ResponseWriter, r *http.Request) {
-	q := GetQueries(r.Context(), h.Queries)
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
@@ -67,45 +64,21 @@ func (h *AssignmentHandler) CreateAssignment(w http.ResponseWriter, r *http.Requ
 	classID, _ := uuid.Parse(req.ClassID)
 	dueDate, _ := time.Parse("2006-01-02", req.DueDate)
 
-	// Verify teacher
-	academicClass, err := q.GetClassByID(r.Context(), db.GetClassByIDParams{
-		ClassID:  classID,
-		SchoolID: schoolID,
-	})
-	if err != nil || academicClass.TeacherID != userCtx.UserID {
-		middleware.ForbiddenError(w, "Not authorized to post assignments to this class", err)
-		return
-	}
-
-	assignment, err := q.CreateAssignment(r.Context(), db.CreateAssignmentParams{
+	assignment, err := h.AssignmentService.CreateAssignment(r.Context(), services.CreateAssignmentParams{
 		SchoolID:       schoolID,
 		ClassID:        classID,
 		TeacherID:      userCtx.UserID,
 		Title:          req.Title,
-		Description:    sql.NullString{String: req.Description, Valid: req.Description != ""},
-		DueDate:        sql.NullTime{Time: dueDate, Valid: req.DueDate != ""},
+		Description:    req.Description,
+		DueDate:        dueDate,
 		MaxScore:       req.MaxScore,
 		AssignmentType: req.AssignmentType,
-		FileUrl:        sql.NullString{String: req.FileURL, Valid: req.FileURL != ""},
+		FileURL:        req.FileURL,
 	})
 
 	if err != nil {
 		middleware.InternalError(w, "Could not create assignment", err)
 		return
-	}
-
-	// Notify students (Async via Asynq)
-	payload, _ := json.Marshal(worker.AssignmentNotificationPayload{
-		SchoolID:     schoolID,
-		ClassID:      classID,
-		TeacherID:    userCtx.UserID,
-		Title:        assignment.Title,
-		DueDate:      dueDate.Format("2006-01-02"),
-		AssignmentID: assignment.AssignmentID,
-	})
-	task := asynq.NewTask(worker.TypeAssignmentNotification, payload)
-	if _, err := h.Asynq.Enqueue(task); err != nil {
-		log.Printf("could not enqueue task: %v", err)
 	}
 
 	w.WriteHeader(http.StatusCreated)

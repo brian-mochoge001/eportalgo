@@ -1,23 +1,24 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/middleware"
+	"github.com/brian-mochoge001/eportalgo/services"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
 type AttendanceHandler struct {
-	Queries *db.Queries
+	Queries           *db.Queries
+	AttendanceService *services.AttendanceService
 }
 
-func NewAttendanceHandler(q *db.Queries) *AttendanceHandler {
-	return &AttendanceHandler{Queries: q}
+func NewAttendanceHandler(q *db.Queries, s *services.AttendanceService) *AttendanceHandler {
+	return &AttendanceHandler{Queries: q, AttendanceService: s}
 }
 
 func (h *AttendanceHandler) GetAttendanceByClass(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +42,6 @@ func (h *AttendanceHandler) GetAttendanceByClass(w http.ResponseWriter, r *http.
 }
 
 func (h *AttendanceHandler) MarkAttendance(w http.ResponseWriter, r *http.Request) {
-	q := GetQueries(r.Context(), h.Queries)
 	var req struct {
 		ClassID            string `json:"class_id"`
 		AttendanceDate     string `json:"attendance_date"`
@@ -62,47 +62,31 @@ func (h *AttendanceHandler) MarkAttendance(w http.ResponseWriter, r *http.Reques
 	classID, _ := uuid.Parse(req.ClassID)
 	attDate, _ := time.Parse("2006-01-02", req.AttendanceDate)
 
-	// Verify teacher
-	academicClass, err := q.GetClassByID(r.Context(), db.GetClassByIDParams{
-		ClassID:  classID,
-		SchoolID: schoolID,
-	})
-	if err != nil || academicClass.TeacherID != userCtx.UserID {
-		middleware.ForbiddenError(w, "Not authorized to mark attendance for this class", err)
-		return
-	}
-
-	var results []db.AttendanceRecord
+	var studentAtts []services.StudentAttendance
 	for _, s := range req.StudentsAttendance {
 		sid, _ := uuid.Parse(s.StudentID)
-		
-		// Check existing
-		existing, err := q.GetAttendanceRecordByUnique(r.Context(), db.GetAttendanceRecordByUniqueParams{
-			SchoolID:       schoolID,
-			StudentID:      sid,
-			ClassID:        classID,
-			AttendanceDate: attDate,
+		studentAtts = append(studentAtts, services.StudentAttendance{
+			StudentID: sid,
+			Status:    s.Status,
+			Notes:     s.Notes,
 		})
+	}
 
-		var record db.AttendanceRecord
-		if err == nil {
-			record, _ = q.UpdateAttendanceRecord(r.Context(), db.UpdateAttendanceRecordParams{
-				AttendanceID: existing.AttendanceID,
-				Status:       s.Status,
-				Notes:        sql.NullString{String: s.Notes, Valid: s.Notes != ""},
-				SchoolID:     schoolID,
-			})
-		} else {
-			record, _ = q.CreateAttendanceRecord(r.Context(), db.CreateAttendanceRecordParams{
-				SchoolID:       schoolID,
-				StudentID:      sid,
-				ClassID:        classID,
-				AttendanceDate: attDate,
-				Status:         s.Status,
-				Notes:          sql.NullString{String: s.Notes, Valid: s.Notes != ""},
-			})
+	results, err := h.AttendanceService.MarkAttendance(r.Context(), services.MarkAttendanceParams{
+		SchoolID:           schoolID,
+		ClassID:            classID,
+		TeacherID:          userCtx.UserID,
+		AttendanceDate:     attDate,
+		StudentsAttendance: studentAtts,
+	})
+
+	if err != nil {
+		if err.Error() == "not authorized to mark attendance for this class" {
+			middleware.ForbiddenError(w, err.Error(), err)
+			return
 		}
-		results = append(results, record)
+		middleware.InternalError(w, "Could not mark attendance", err)
+		return
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{

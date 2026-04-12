@@ -9,17 +9,18 @@ import (
 
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/middleware"
+	"github.com/brian-mochoge001/eportalgo/services"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
 type ClassHandler struct {
-	Queries *db.Queries
-	DB      *sql.DB
+	Queries      *db.Queries
+	ClassService *services.ClassService
 }
 
-func NewClassHandler(q *db.Queries, d *sql.DB) *ClassHandler {
-	return &ClassHandler{Queries: q, DB: d}
+func NewClassHandler(q *db.Queries, s *services.ClassService) *ClassHandler {
+	return &ClassHandler{Queries: q, ClassService: s}
 }
 
 func (h *ClassHandler) GetClasses(w http.ResponseWriter, r *http.Request) {
@@ -99,77 +100,27 @@ func (h *ClassHandler) AddStudentsToClass(w http.ResponseWriter, r *http.Request
 	schoolID := userCtx.SchoolID.UUID
 
 	if !isAcademicAdmin(userCtx.RoleName) {
-		middleware.ForbiddenError(w, "Forbidden", err)
+		middleware.ForbiddenError(w, "Forbidden", nil)
 		return
 	}
 
-	// Start transaction
-	tx, err := h.DB.Begin()
-	if err != nil {
-		middleware.InternalError(w, "Internal Server Error", err)
-		return
-	}
-	defer tx.Rollback()
-
-	qtx := h.Queries.WithTx(tx)
-
-	// Verify class
-	_, err = qtx.GetClassByID(r.Context(), db.GetClassByIDParams{
-		ClassID:  classID,
-		SchoolID: schoolID,
-	})
-	if err != nil {
-		middleware.NotFoundError(w, "Class not found", err)
-		return
-	}
-
-	newEnrollmentsCount := 0
-	alreadyEnrolledCount := 0
-
+	var studentIDs []uuid.UUID
 	for _, sidStr := range req.StudentIds {
-		sid, err := uuid.Parse(sidStr)
-		if err != nil {
-			continue
-		}
-
-		// Check if already enrolled
-		_, err = qtx.GetEnrollmentByStudentAndClass(r.Context(), db.GetEnrollmentByStudentAndClassParams{
-			StudentID: sid,
-			ClassID:   classID,
-		})
-		if err == nil {
-			alreadyEnrolledCount++
-			continue
-		}
-
-		// Verify student
-		_, err = qtx.GetUser(r.Context(), db.GetUserParams{
-			UserID:   sid,
-			SchoolID: uuid.NullUUID{UUID: schoolID, Valid: true},
-		})
-		if err != nil {
-			continue
-		}
-
-		// Create enrollment
-		_, err = qtx.CreateEnrollment(r.Context(), db.CreateEnrollmentParams{
-			SchoolID:       schoolID,
-			StudentID:      sid,
-			ClassID:        classID,
-			EnrollmentDate: time.Now(),
-			Status:         "Enrolled",
-		})
-		if err == nil {
-			newEnrollmentsCount++
+		if sid, err := uuid.Parse(sidStr); err == nil {
+			studentIDs = append(studentIDs, sid)
 		}
 	}
 
-	tx.Commit()
+	result, err := h.ClassService.BulkEnrollStudents(r.Context(), classID, schoolID, studentIDs)
+	if err != nil {
+		middleware.InternalError(w, "Failed to enroll students", err)
+		return
+	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message":                fmt.Sprintf("Successfully enrolled %d new students.", newEnrollmentsCount),
-		"newly_enrolled_count":   newEnrollmentsCount,
-		"already_enrolled_count": alreadyEnrolledCount,
+		"message":                fmt.Sprintf("Successfully enrolled %d new students.", result.NewlyEnrolledCount),
+		"newly_enrolled_count":   result.NewlyEnrolledCount,
+		"already_enrolled_count": result.AlreadyEnrolledCount,
 	})
 }
 

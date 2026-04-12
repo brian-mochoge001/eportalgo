@@ -1,23 +1,24 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/middleware"
+	"github.com/brian-mochoge001/eportalgo/services"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
 type LessonPlanHandler struct {
-	Queries *db.Queries
+	Queries           *db.Queries
+	LessonPlanService *services.LessonPlanService
 }
 
-func NewLessonPlanHandler(q *db.Queries) *LessonPlanHandler {
-	return &LessonPlanHandler{Queries: q}
+func NewLessonPlanHandler(q *db.Queries, s *services.LessonPlanService) *LessonPlanHandler {
+	return &LessonPlanHandler{Queries: q, LessonPlanService: s}
 }
 
 func (h *LessonPlanHandler) CreateLessonPlan(w http.ResponseWriter, r *http.Request) {
@@ -37,36 +38,25 @@ func (h *LessonPlanHandler) CreateLessonPlan(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if req.Title == "" || req.Content == "" {
-		middleware.ValidationError(w, "Title and content are required", nil)
-		return
-	}
-
-	var classID uuid.NullUUID
-	if req.ClassID != "" {
-		if id, err := uuid.Parse(req.ClassID); err == nil {
-			classID = uuid.NullUUID{UUID: id, Valid: true}
-		}
-	}
-
-	var dateCovered sql.NullTime
+	classID := toNullUUID(req.ClassID)
+	var dateCovered *time.Time
 	if req.DateCovered != "" {
 		if t, err := time.Parse(time.RFC3339, req.DateCovered); err == nil {
-			dateCovered = sql.NullTime{Time: t, Valid: true}
+			dateCovered = &t
 		}
 	}
 
-	lessonPlan, err := h.Queries.CreateLessonPlan(r.Context(), db.CreateLessonPlanParams{
+	lessonPlan, err := h.LessonPlanService.CreateLessonPlan(r.Context(), services.CreateLessonPlanParams{
 		SchoolID:    schoolID,
 		TeacherID:   userID,
 		ClassID:     classID,
 		Title:       req.Title,
-		Content:     sql.NullString{String: req.Content, Valid: req.Content != ""},
+		Content:     req.Content,
 		DateCovered: dateCovered,
 	})
 
 	if err != nil {
-		middleware.InternalError(w, "Could not create lesson plan", err)
+		middleware.InternalError(w, err.Error(), err)
 		return
 	}
 
@@ -82,17 +72,13 @@ func (h *LessonPlanHandler) GetLessonPlans(w http.ResponseWriter, r *http.Reques
 	teacherIDStr := r.URL.Query().Get("teacherId")
 
 	var classID uuid.NullUUID
-	if classIDStr != "" {
-		if id, err := uuid.Parse(classIDStr); err == nil {
-			classID = uuid.NullUUID{UUID: id, Valid: true}
-		}
+	if id, err := uuid.Parse(classIDStr); err == nil {
+		classID = uuid.NullUUID{UUID: id, Valid: true}
 	}
 
 	var teacherID uuid.NullUUID
-	if teacherIDStr != "" {
-		if id, err := uuid.Parse(teacherIDStr); err == nil {
-			teacherID = uuid.NullUUID{UUID: id, Valid: true}
-		}
+	if id, err := uuid.Parse(teacherIDStr); err == nil {
+		teacherID = uuid.NullUUID{UUID: id, Valid: true}
 	}
 
 	// Teachers can only see their own lesson plans unless they are an admin
@@ -115,11 +101,7 @@ func (h *LessonPlanHandler) GetLessonPlans(w http.ResponseWriter, r *http.Reques
 
 func (h *LessonPlanHandler) GetLessonPlanByID(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	lessonPlanID, err := uuid.Parse(idStr)
-	if err != nil {
-		middleware.ValidationError(w, "Invalid lesson plan ID", err)
-		return
-	}
+	lessonPlanID, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
@@ -135,7 +117,7 @@ func (h *LessonPlanHandler) GetLessonPlanByID(w http.ResponseWriter, r *http.Req
 
 	// Ensure teacher can only access their own lesson plans unless they are an admin
 	if userCtx.RoleName == "Teacher" && lessonPlan.TeacherID != userCtx.UserID {
-		middleware.ForbiddenError(w, "Not authorized to view this lesson plan", err)
+		middleware.ForbiddenError(w, "Not authorized to view this lesson plan", nil)
 		return
 	}
 
@@ -144,11 +126,7 @@ func (h *LessonPlanHandler) GetLessonPlanByID(w http.ResponseWriter, r *http.Req
 
 func (h *LessonPlanHandler) UpdateLessonPlan(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	lessonPlanID, err := uuid.Parse(idStr)
-	if err != nil {
-		middleware.ValidationError(w, "Invalid lesson plan ID", err)
-		return
-	}
+	lessonPlanID, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
@@ -165,95 +143,46 @@ func (h *LessonPlanHandler) UpdateLessonPlan(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	existingLessonPlan, err := h.Queries.GetLessonPlanByID(r.Context(), db.GetLessonPlanByIDParams{
+	params := services.UpdateLessonPlanParams{
 		LessonPlanID: lessonPlanID,
 		SchoolID:     schoolID,
-	})
-	if err != nil {
-		middleware.NotFoundError(w, "Lesson plan not found", err)
-		return
+		TeacherID:    userCtx.UserID,
+		RoleName:     userCtx.RoleName,
+		Title:        req.Title,
+		Content:      req.Content,
 	}
 
-	// Ensure teacher can only update their own lesson plans unless they are an admin
-	if userCtx.RoleName == "Teacher" && existingLessonPlan.TeacherID != userCtx.UserID {
-		middleware.ForbiddenError(w, "Not authorized to update this lesson plan", err)
-		return
-	}
-
-	params := db.UpdateLessonPlanParams{
-		LessonPlanID: lessonPlanID,
-		SchoolID:     schoolID,
-		TeacherID:    existingLessonPlan.TeacherID,
-		Title:        existingLessonPlan.Title,
-		Content:      existingLessonPlan.Content,
-		ClassID:      existingLessonPlan.ClassID,
-		DateCovered:  existingLessonPlan.DateCovered,
-	}
-
-	if req.Title != "" {
-		params.Title = req.Title
-	}
-	if req.Content != "" {
-		params.Content = sql.NullString{String: req.Content, Valid: true}
-	}
 	if req.ClassID != "" {
 		if id, err := uuid.Parse(req.ClassID); err == nil {
-			params.ClassID = uuid.NullUUID{UUID: id, Valid: true}
+			params.ClassID = &id
 		}
 	}
 	if req.DateCovered != "" {
 		if t, err := time.Parse(time.RFC3339, req.DateCovered); err == nil {
-			params.DateCovered = sql.NullTime{Time: t, Valid: true}
+			params.DateCovered = &t
 		}
 	}
 
-	updatedLessonPlan, err := h.Queries.UpdateLessonPlan(r.Context(), params)
+	updated, err := h.LessonPlanService.UpdateLessonPlan(r.Context(), params)
 	if err != nil {
-		middleware.InternalError(w, "Could not update lesson plan", err)
+		middleware.InternalError(w, err.Error(), err)
 		return
 	}
 
-	json.NewEncoder(w).Encode(updatedLessonPlan)
+	json.NewEncoder(w).Encode(updated)
 }
 
 func (h *LessonPlanHandler) DeleteLessonPlan(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
-	lessonPlanID, err := uuid.Parse(idStr)
-	if err != nil {
-		middleware.ValidationError(w, "Invalid lesson plan ID", err)
-		return
-	}
+	lessonPlanID, _ := uuid.Parse(idStr)
 
 	userCtx, _ := middleware.GetUser(r.Context())
-	schoolID := userCtx.SchoolID.UUID
 
-	existingLessonPlan, err := h.Queries.GetLessonPlanByID(r.Context(), db.GetLessonPlanByIDParams{
-		LessonPlanID: lessonPlanID,
-		SchoolID:     schoolID,
-	})
+	err := h.LessonPlanService.DeleteLessonPlan(r.Context(), lessonPlanID, userCtx.SchoolID.UUID, userCtx.UserID, userCtx.RoleName)
 	if err != nil {
-		middleware.NotFoundError(w, "Lesson plan not found", err)
-		return
-	}
-
-	// Ensure teacher can only delete their own lesson plans unless they are an admin
-	if userCtx.RoleName == "Teacher" && existingLessonPlan.TeacherID != userCtx.UserID {
-		middleware.ForbiddenError(w, "Not authorized to delete this lesson plan", err)
-		return
-	}
-
-	err = h.Queries.DeleteLessonPlan(r.Context(), db.DeleteLessonPlanParams{
-		LessonPlanID: lessonPlanID,
-		SchoolID:     schoolID,
-		TeacherID:    existingLessonPlan.TeacherID,
-	})
-	if err != nil {
-		middleware.InternalError(w, "Could not delete lesson plan", err)
+		middleware.InternalError(w, err.Error(), err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
-
-
-

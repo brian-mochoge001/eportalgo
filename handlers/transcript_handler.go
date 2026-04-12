@@ -6,16 +6,18 @@ import (
 	"net/http"
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/middleware"
+	"github.com/brian-mochoge001/eportalgo/services"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
 type TranscriptHandler struct {
-	Queries *db.Queries
+	Queries          *db.Queries
+	ReportingService *services.ReportingService
 }
 
-func NewTranscriptHandler(q *db.Queries) *TranscriptHandler {
-	return &TranscriptHandler{Queries: q}
+func NewTranscriptHandler(q *db.Queries, s *services.ReportingService) *TranscriptHandler {
+	return &TranscriptHandler{Queries: q, ReportingService: s}
 }
 
 func (h *TranscriptHandler) CreateTranscript(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +28,7 @@ func (h *TranscriptHandler) CreateTranscript(w http.ResponseWriter, r *http.Requ
 		StudentID     string `json:"student_id"`
 		AcademicYear  string `json:"academic_year"`
 		CumulativeGPA string `json:"cumulative_gpa"`
-		TranscriptData string `json:"transcript_data"` // Assuming JSON string
+		TranscriptData string `json:"transcript_data"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -36,13 +38,13 @@ func (h *TranscriptHandler) CreateTranscript(w http.ResponseWriter, r *http.Requ
 
 	studentID, _ := uuid.Parse(req.StudentID)
 
-	transcript, err := h.Queries.CreateTranscript(r.Context(), db.CreateTranscriptParams{
+	transcript, err := h.ReportingService.CreateTranscript(r.Context(), services.CreateTranscriptParams{
 		SchoolID:       schoolID,
 		StudentID:      studentID,
 		AcademicYear:   req.AcademicYear,
-		CumulativeGpa:  sql.NullString{String: req.CumulativeGPA, Valid: req.CumulativeGPA != ""},
-		TranscriptData: json.RawMessage(req.TranscriptData),
-		IssuedByUserID: uuid.NullUUID{UUID: userCtx.UserID, Valid: true},
+		CumulativeGPA:  req.CumulativeGPA,
+		TranscriptData: req.TranscriptData,
+		IssuedByUserID: userCtx.UserID,
 	})
 
 	if err != nil {

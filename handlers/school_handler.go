@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"firebase.google.com/go/v4/auth"
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/middleware"
+	"github.com/brian-mochoge001/eportalgo/services"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -21,13 +21,13 @@ import (
 )
 
 type SchoolHandler struct {
-	Queries      *db.Queries
-	FirebaseAuth *auth.Client
-	Redis        *redis.Client
+	Queries       *db.Queries
+	SchoolService *services.SchoolService
+	Redis         *redis.Client
 }
 
-func NewSchoolHandler(q *db.Queries, fb *auth.Client, r *redis.Client) *SchoolHandler {
-	return &SchoolHandler{Queries: q, FirebaseAuth: fb, Redis: r}
+func NewSchoolHandler(q *db.Queries, s *services.SchoolService, r *redis.Client) *SchoolHandler {
+	return &SchoolHandler{Queries: q, SchoolService: s, Redis: r}
 }
 
 func generateSchoolInitial(name string) string {
@@ -52,16 +52,16 @@ func generateSchoolInitial(name string) string {
 
 func (h *SchoolHandler) RegisterSchool(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		SchoolName     string `json:"schoolName"`
-		Subdomain      string `json:"subdomain"`
-		Address        string `json:"address"`
-		PhoneNumber    string `json:"phoneNumber"`
-		Email          string `json:"email"`
-		AdminFirstName string `json:"adminFirstName"`
-		AdminLastName  string `json:"adminLastName"`
-		AdminEmail     string `json:"adminEmail"`
+		SchoolName       string `json:"schoolName"`
+		Subdomain        string `json:"subdomain"`
+		Address          string `json:"address"`
+		PhoneNumber      string `json:"phoneNumber"`
+		Email            string `json:"email"`
+		AdminFirstName   string `json:"adminFirstName"`
+		AdminLastName    string `json:"adminLastName"`
+		AdminEmail       string `json:"adminEmail"`
 		AdminFirebaseUid string `json:"adminFirebaseUid"`
-		AdminRoleName  string `json:"adminRoleName"`
+		AdminRoleName    string `json:"adminRoleName"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -69,99 +69,42 @@ func (h *SchoolHandler) RegisterSchool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.AdminRoleName == "" {
-		req.AdminRoleName = "Executive Administrator"
-	}
-
-	// Check if school exists
-	existing, _ := h.Queries.GetSchoolByNameOrSubdomain(r.Context(), db.GetSchoolByNameOrSubdomainParams{
-		SchoolName: req.SchoolName,
-		Subdomain:  sql.NullString{String: req.Subdomain, Valid: req.Subdomain != ""},
+	resp, err := h.SchoolService.RegisterSchool(r.Context(), services.RegisterSchoolRequest{
+		SchoolName:       req.SchoolName,
+		Subdomain:        req.Subdomain,
+		Address:          req.Address,
+		PhoneNumber:      req.PhoneNumber,
+		Email:            req.Email,
+		AdminFirstName:   req.AdminFirstName,
+		AdminLastName:    req.AdminLastName,
+		AdminEmail:       req.AdminEmail,
+		AdminFirebaseUid: req.AdminFirebaseUid,
+		AdminRoleName:    req.AdminRoleName,
 	})
-	if existing.SchoolID != uuid.Nil {
-		middleware.SendError(w, "School with this name or subdomain already exists", http.StatusConflict, "CONFLICT", nil)
-		return
-	}
 
-	// Generate unique initial
-	schoolInitial := generateSchoolInitial(req.SchoolName)
-	for {
-		exists, _ := h.Queries.GetSchoolByInitial(r.Context(), sql.NullString{String: schoolInitial, Valid: true})
-		if exists.SchoolID == uuid.Nil {
-			break
+	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			middleware.SendError(w, err.Error(), http.StatusConflict, "CONFLICT", nil)
+			return
 		}
-		schoolInitial = generateSchoolInitial(req.SchoolName)
-	}
-
-	// Create School
-	school, err := h.Queries.CreateSchool(r.Context(), db.CreateSchoolParams{
-		SchoolName:    req.SchoolName,
-		Subdomain:     sql.NullString{String: req.Subdomain, Valid: req.Subdomain != ""},
-		Status:        "pending",
-		SchoolInitial: sql.NullString{String: schoolInitial, Valid: true},
-		Address:       sql.NullString{String: req.Address, Valid: req.Address != ""},
-		PhoneNumber:   sql.NullString{String: req.PhoneNumber, Valid: req.PhoneNumber != ""},
-		Email:         sql.NullString{String: req.Email, Valid: req.Email != ""},
-	})
-	if err != nil {
-		slog.Error("Failed to create school", "error", err)
+		slog.Error("Failed to register school", "error", err)
 		middleware.InternalError(w, "Internal Server Error", err)
 		return
-	}
-
-	// Find Role
-	role, err := h.Queries.GetRoleByName(r.Context(), req.AdminRoleName)
-	if err != nil {
-		middleware.InternalError(w, fmt.Sprintf("Role '%s' not found", req.AdminRoleName), err)
-		return
-	}
-
-	// Create Admin User
-	adminUser, err := h.Queries.CreateUser(r.Context(), db.CreateUserParams{
-		SchoolID:    uuid.NullUUID{UUID: school.SchoolID, Valid: true},
-		RoleID:      role.RoleID,
-		FirstName:   req.AdminFirstName,
-		LastName:    req.AdminLastName,
-		Email:       req.AdminEmail,
-		FirebaseUid: sql.NullString{String: req.AdminFirebaseUid, Valid: true},
-		IsActive:    true,
-	})
-	if err != nil {
-		slog.Error("Failed to create admin user", "error", err)
-		middleware.InternalError(w, "Internal Server Error", err)
-		return
-	}
-
-	// Create Default School Settings
-	_, err = h.Queries.CreateSchoolSetting(r.Context(), school.SchoolID)
-	if err != nil {
-		slog.Error("Failed to create school settings", "error", err)
-	}
-
-	// Set Firebase Custom Claims
-	claims := map[string]interface{}{
-		"role":         role.RoleName,
-		"schoolId":     school.SchoolID.String(),
-		"schoolStatus": school.Status,
-	}
-	err = h.FirebaseAuth.SetCustomUserClaims(r.Context(), req.AdminFirebaseUid, claims)
-	if err != nil {
-		slog.Error("Failed to set custom claims", "error", err)
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"message": "School registration submitted for verification.",
 		"school": map[string]interface{}{
-			"id":      school.SchoolID,
-			"name":    school.SchoolName,
-			"status":  school.Status,
-			"initial": school.SchoolInitial.String,
+			"id":      resp.School.SchoolID,
+			"name":    resp.School.SchoolName,
+			"status":  resp.School.Status,
+			"initial": resp.School.SchoolInitial.String,
 		},
 		"adminUser": map[string]interface{}{
-			"id":    adminUser.UserID,
-			"email": adminUser.Email,
-			"role":  role.RoleName,
+			"id":    resp.AdminUser.UserID,
+			"email": resp.AdminUser.Email,
+			"role":  resp.RoleName,
 		},
 	})
 }
@@ -187,7 +130,7 @@ func (h *SchoolHandler) VerifySchool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	school, err := h.Queries.GetSchoolWithAdmin(r.Context(), schoolID)
+	updatedSchool, err := h.SchoolService.VerifySchool(r.Context(), schoolID, req.Status)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			middleware.NotFoundError(w, "School not found", err)
@@ -195,25 +138,6 @@ func (h *SchoolHandler) VerifySchool(w http.ResponseWriter, r *http.Request) {
 		}
 		middleware.InternalError(w, "Internal Server Error", err)
 		return
-	}
-
-	updatedSchool, err := h.Queries.UpdateSchoolStatus(r.Context(), db.UpdateSchoolStatusParams{
-		SchoolID: schoolID,
-		Status:   req.Status,
-	})
-	if err != nil {
-		middleware.InternalError(w, "Internal Server Error", err)
-		return
-	}
-
-	// Update Firebase claims for admin
-	if school.AdminFirebaseUid.Valid {
-		claims := map[string]interface{}{
-			"schoolStatus": updatedSchool.Status,
-			"schoolId":     updatedSchool.SchoolID.String(),
-			"role":         school.AdminRoleName,
-		}
-		h.FirebaseAuth.SetCustomUserClaims(r.Context(), school.AdminFirebaseUid.String, claims)
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{

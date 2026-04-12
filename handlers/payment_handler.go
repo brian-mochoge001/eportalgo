@@ -1,22 +1,22 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/middleware"
+	"github.com/brian-mochoge001/eportalgo/services"
 	"github.com/google/uuid"
 )
 
 type PaymentHandler struct {
-	Queries *db.Queries
-	DB      *sql.DB
+	Queries        *db.Queries
+	FinanceService *services.FinanceService
 }
 
-func NewPaymentHandler(q *db.Queries, d *sql.DB) *PaymentHandler {
-	return &PaymentHandler{Queries: q, DB: d}
+func NewPaymentHandler(q *db.Queries, s *services.FinanceService) *PaymentHandler {
+	return &PaymentHandler{Queries: q, FinanceService: s}
 }
 
 func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
@@ -39,43 +39,19 @@ func (h *PaymentHandler) CreatePayment(w http.ResponseWriter, r *http.Request) {
 
 	studentFeeID, _ := uuid.Parse(req.StudentFeeID)
 
-	tx, err := h.DB.BeginTx(r.Context(), nil)
-	if err != nil {
-		middleware.InternalError(w, "Could not start transaction", err)
-		return
-	}
-	defer tx.Rollback()
-
-	qtx := h.Queries.WithTx(tx)
-
-	// Create Payment
-	payment, err := qtx.CreatePayment(r.Context(), db.CreatePaymentParams{
-		SchoolID:          schoolID,
-		StudentFeeID:      studentFeeID,
-		Amount:            req.Amount,
-		PaymentMethod:     toNullString(req.PaymentMethod),
-		TransactionID:     toNullString(req.TransactionID),
-		RecordedByUserID:  uuid.NullUUID{UUID: userCtx.UserID, Valid: true},
-		Notes:             toNullString(req.Notes),
-		ReceiptNumber:     toNullString(req.ReceiptNumber),
+	payment, err := h.FinanceService.ProcessPayment(r.Context(), services.ProcessPaymentParams{
+		SchoolID:         schoolID,
+		StudentFeeID:     studentFeeID,
+		Amount:           req.Amount,
+		PaymentMethod:    req.PaymentMethod,
+		TransactionID:    req.TransactionID,
+		RecordedByUserID: userCtx.UserID,
+		Notes:            req.Notes,
+		ReceiptNumber:    req.ReceiptNumber,
 	})
-	if err != nil {
-		middleware.InternalError(w, "Could not create payment", err)
-		return
-	}
 
-	// Update Student Fee Amount Paid
-	_, err = qtx.UpdateStudentFeeAmountPaid(r.Context(), db.UpdateStudentFeeAmountPaidParams{
-		StudentFeeID: studentFeeID,
-		Column2:    req.Amount,
-	})
 	if err != nil {
-		middleware.InternalError(w, "Could not update fee balance", err)
-		return
-	}
-
-	if err := tx.Commit(); err != nil {
-		middleware.InternalError(w, "Could not commit transaction", err)
+		middleware.InternalError(w, "Could not process payment", err)
 		return
 	}
 
