@@ -104,18 +104,35 @@ func main() {
 	// Initialize Redis client
 	redisURL := os.Getenv("REDIS_URL")
 	if redisURL == "" {
-		redisURL = "localhost:6379"
+		redisURL = "redis://localhost:6379"
 	}
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: redisURL,
-	})
+	fmt.Printf("DEBUG: Using Redis URL: %s\n", redisURL)
+
+	optRedis, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Fatalf("Error parsing Redis URL: %v", err)
+	}
+	fmt.Printf("DEBUG: Redis Addr: %s\n", optRedis.Addr)
+	redisClient := redis.NewClient(optRedis)
 
 	// Initialize Asynq client and server
-	asynqClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisURL})
+	redisConnOpt, err := asynq.ParseRedisURI(redisURL)
+	if err != nil {
+		log.Fatalf("Error parsing Redis URI for Asynq: %v", err)
+	}
+	
+	// Type assert to see the address for debugging
+	if clientOpt, ok := redisConnOpt.(asynq.RedisClientOpt); ok {
+		fmt.Printf("DEBUG: Asynq Redis Addr: %s\n", clientOpt.Addr)
+	} else if clusterOpt, ok := redisConnOpt.(asynq.RedisClusterClientOpt); ok {
+		fmt.Printf("DEBUG: Asynq Redis Cluster Addrs: %v\n", clusterOpt.Addrs)
+	}
+
+	asynqClient := asynq.NewClient(redisConnOpt)
 	defer asynqClient.Close()
 
 	asynqServer := asynq.NewServer(
-		asynq.RedisClientOpt{Addr: redisURL},
+		redisConnOpt,
 		asynq.Config{Concurrency: 10},
 	)
 
