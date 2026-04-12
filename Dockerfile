@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.26.1-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 # Install necessary build tools
 RUN apk add --no-cache git
@@ -16,13 +16,15 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o main .
+# Use -ldflags to reduce binary size
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o main .
 
 # Run stage
 FROM alpine:3.18
 
-# Install postgresql-client for running seed scripts and schema
-RUN apk add --no-cache postgresql-client bash
+# Install ca-certificates (needed for Firebase and external APIs)
+# Install postgresql-client for schema and seed scripts if needed
+RUN apk add --no-cache ca-certificates postgresql-client bash
 
 WORKDIR /app
 
@@ -37,8 +39,9 @@ COPY db/seed.sql ./db/seed.sql
 COPY scripts/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
-# Expose port
+# Render injects the PORT environment variable.
+# We expose 8080 as a default, but our app should listen on $PORT.
 EXPOSE 8080
 
-# Use entrypoint script to run migrations/seed and then start the app
+# The entrypoint script will run migrations/seed if needed and then start the app
 ENTRYPOINT ["./entrypoint.sh"]
