@@ -4,3 +4,4 @@ bin/
 *.exe
 *.test
 vendor/
+**/eschool-infinnitydevelopers-firebase-adminsdk.json

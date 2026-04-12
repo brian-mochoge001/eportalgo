@@ -52,7 +52,22 @@ func main() {
 	queries := db.New(conn)
 
 	// Initialize Firebase Admin SDK
-	opt := option.WithCredentialsFile(os.Getenv("FIREBASE_CREDENTIALS_PATH"))
+	credsPath := os.Getenv("FIREBASE_CREDENTIALS_PATH")
+	if credsPath == "" {
+		log.Fatal("FIREBASE_CREDENTIALS_PATH environment variable is required")
+	}
+
+	// Verify file exists
+	info, err := os.Stat(credsPath)
+	if err != nil {
+		log.Fatalf("Firebase credentials file not found at %s: %v", credsPath, err)
+	}
+	fmt.Printf("Firebase credentials file found. Size: %d bytes\n", info.Size())
+
+	// Force GOOGLE_APPLICATION_CREDENTIALS for underlying libraries
+	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credsPath)
+
+	opt := option.WithCredentialsFile(credsPath)
 	app, err := firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {
 		log.Fatalf("Error initializing Firebase App: %v", err)
