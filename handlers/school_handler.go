@@ -52,16 +52,15 @@ func generateSchoolInitial(name string) string {
 
 func (h *SchoolHandler) RegisterSchool(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		SchoolName       string `json:"schoolName"`
-		Subdomain        string `json:"subdomain"`
-		Address          string `json:"address"`
-		PhoneNumber      string `json:"phoneNumber"`
-		Email            string `json:"email"`
-		AdminFirstName   string `json:"adminFirstName"`
-		AdminLastName    string `json:"adminLastName"`
-		AdminEmail       string `json:"adminEmail"`
-		AdminFirebaseUid string `json:"adminFirebaseUid"`
-		AdminRoleName    string `json:"adminRoleName"`
+		SchoolName     string `json:"schoolName"`
+		Subdomain      string `json:"subdomain"`
+		Address        string `json:"address"`
+		PhoneNumber    string `json:"phoneNumber"`
+		Email          string `json:"email"`
+		AdminFirstName string `json:"adminFirstName"`
+		AdminLastName  string `json:"adminLastName"`
+		AdminEmail     string `json:"adminEmail"`
+		AdminRoleName  string `json:"adminRoleName"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -70,16 +69,15 @@ func (h *SchoolHandler) RegisterSchool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.SchoolService.RegisterSchool(r.Context(), services.RegisterSchoolRequest{
-		SchoolName:       req.SchoolName,
-		Subdomain:        req.Subdomain,
-		Address:          req.Address,
-		PhoneNumber:      req.PhoneNumber,
-		Email:            req.Email,
-		AdminFirstName:   req.AdminFirstName,
-		AdminLastName:    req.AdminLastName,
-		AdminEmail:       req.AdminEmail,
-		AdminFirebaseUid: req.AdminFirebaseUid,
-		AdminRoleName:    req.AdminRoleName,
+		SchoolName:     req.SchoolName,
+		Subdomain:      req.Subdomain,
+		Address:        req.Address,
+		PhoneNumber:    req.PhoneNumber,
+		Email:          req.Email,
+		AdminFirstName: req.AdminFirstName,
+		AdminLastName:  req.AdminLastName,
+		AdminEmail:     req.AdminEmail,
+		AdminRoleName:  req.AdminRoleName,
 	})
 
 	if err != nil {

@@ -341,6 +341,7 @@ type Assignment struct {
 	GradeCategoryID uuid.NullUUID
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	SubjectID       uuid.NullUUID
 }
 
 type AttendanceRecord struct {
@@ -394,6 +395,18 @@ type BadgeCourse struct {
 	CompletionType string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+}
+
+type Banner struct {
+	BannerID  uuid.UUID
+	SchoolID  uuid.NullUUID
+	Title     sql.NullString
+	ImageUrl  string
+	TargetUrl sql.NullString
+	IsActive  bool
+	Order     int32
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type BillingContact struct {
@@ -749,6 +762,7 @@ type LearningMaterial struct {
 	UploadedAt       time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	SubjectID        uuid.NullUUID
 }
 
 type LessonPlan struct {
@@ -847,6 +861,7 @@ type Notification struct {
 	SentAt           time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	SubjectID        uuid.NullUUID
 }
 
 type NotificationRecipient struct {
@@ -963,6 +978,29 @@ type QuizSubmission struct {
 	SubmittedAt  time.Time
 	Status       string
 	DeletedAt    sql.NullTime
+}
+
+type Reminder struct {
+	ReminderID  uuid.UUID
+	ListID      uuid.UUID
+	UserID      uuid.UUID
+	Title       string
+	Notes       sql.NullString
+	DueDate     sql.NullTime
+	Priority    sql.NullString
+	IsCompleted bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+type ReminderList struct {
+	ListID    uuid.UUID
+	SchoolID  uuid.NullUUID
+	UserID    uuid.UUID
+	Title     string
+	Color     sql.NullString
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type Role struct {

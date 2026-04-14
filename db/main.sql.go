@@ -287,7 +287,7 @@ INSERT INTO assignments (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9
 )
-RETURNING assignment_id, school_id, class_id, teacher_id, title, description, due_date, max_score, assignment_type, file_url, quiz_id, grade_category_id, created_at, updated_at
+RETURNING assignment_id, school_id, class_id, teacher_id, title, description, due_date, max_score, assignment_type, file_url, quiz_id, grade_category_id, created_at, updated_at, subject_id
 `
 
 type CreateAssignmentParams struct {
@@ -331,6 +331,7 @@ func (q *Queries) CreateAssignment(ctx context.Context, arg CreateAssignmentPara
 		&i.GradeCategoryID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SubjectID,
 	)
 	return i, err
 }
@@ -466,6 +467,49 @@ func (q *Queries) CreateBadge(ctx context.Context, arg CreateBadgeParams) (Badge
 		&i.Description,
 		&i.IconUrl,
 		&i.Criteria,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createBanner = `-- name: CreateBanner :one
+INSERT INTO banners (
+  school_id, title, image_url, target_url, is_active, "order"
+) VALUES (
+  $1, $2, $3, $4, $5, $6
+)
+RETURNING banner_id, school_id, title, image_url, target_url, is_active, "order", created_at, updated_at
+`
+
+type CreateBannerParams struct {
+	SchoolID  uuid.NullUUID
+	Title     sql.NullString
+	ImageUrl  string
+	TargetUrl sql.NullString
+	IsActive  bool
+	Order     int32
+}
+
+// Banners
+func (q *Queries) CreateBanner(ctx context.Context, arg CreateBannerParams) (Banner, error) {
+	row := q.db.QueryRowContext(ctx, createBanner,
+		arg.SchoolID,
+		arg.Title,
+		arg.ImageUrl,
+		arg.TargetUrl,
+		arg.IsActive,
+		arg.Order,
+	)
+	var i Banner
+	err := row.Scan(
+		&i.BannerID,
+		&i.SchoolID,
+		&i.Title,
+		&i.ImageUrl,
+		&i.TargetUrl,
+		&i.IsActive,
+		&i.Order,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1044,7 +1088,7 @@ INSERT INTO learning_materials (
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING material_id, school_id, uploaded_by_user_id, class_id, course_id, title, description, file_url, content, material_type, external_data, uploaded_at, created_at, updated_at
+RETURNING material_id, school_id, uploaded_by_user_id, class_id, course_id, title, description, file_url, content, material_type, external_data, uploaded_at, created_at, updated_at, subject_id
 `
 
 type CreateLearningMaterialParams struct {
@@ -1086,6 +1130,7 @@ func (q *Queries) CreateLearningMaterial(ctx context.Context, arg CreateLearning
 		&i.UploadedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SubjectID,
 	)
 	return i, err
 }
@@ -1237,9 +1282,9 @@ WITH new_notification AS (
   ) VALUES (
     $1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP
   )
-  RETURNING notification_id, school_id, sender_id, notification_type, title, message, link_url, entity_type, entity_id, sent_at, created_at, updated_at
+  RETURNING notification_id, school_id, sender_id, notification_type, title, message, link_url, entity_type, entity_id, sent_at, created_at, updated_at, subject_id
 )
-SELECT notification_id, school_id, sender_id, notification_type, title, message, link_url, entity_type, entity_id, sent_at, created_at, updated_at FROM new_notification
+SELECT notification_id, school_id, sender_id, notification_type, title, message, link_url, entity_type, entity_id, sent_at, created_at, updated_at, subject_id FROM new_notification
 `
 
 type CreateNotificationParams struct {
@@ -1264,6 +1309,7 @@ type CreateNotificationRow struct {
 	SentAt           time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	SubjectID        uuid.NullUUID
 }
 
 // Notifications
@@ -1290,6 +1336,7 @@ func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotification
 		&i.SentAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SubjectID,
 	)
 	return i, err
 }
@@ -1438,6 +1485,43 @@ func (q *Queries) CreateParentProfile(ctx context.Context, arg CreateParentProfi
 		&i.Occupation,
 		&i.EmergencyContactName,
 		&i.EmergencyContactPhone,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createParentStudentRelationship = `-- name: CreateParentStudentRelationship :one
+INSERT INTO parent_student_relationships (
+  parent_user_id, student_user_id, school_id, relationship_type
+) VALUES (
+  $1, $2, $3, $4
+)
+RETURNING relationship_id, school_id, parent_user_id, student_user_id, relationship_type, created_at, updated_at
+`
+
+type CreateParentStudentRelationshipParams struct {
+	ParentUserID     uuid.UUID
+	StudentUserID    uuid.UUID
+	SchoolID         uuid.UUID
+	RelationshipType string
+}
+
+// Parent-Child: Create relationship
+func (q *Queries) CreateParentStudentRelationship(ctx context.Context, arg CreateParentStudentRelationshipParams) (ParentStudentRelationship, error) {
+	row := q.db.QueryRowContext(ctx, createParentStudentRelationship,
+		arg.ParentUserID,
+		arg.StudentUserID,
+		arg.SchoolID,
+		arg.RelationshipType,
+	)
+	var i ParentStudentRelationship
+	err := row.Scan(
+		&i.RelationshipID,
+		&i.SchoolID,
+		&i.ParentUserID,
+		&i.StudentUserID,
+		&i.RelationshipType,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -1658,6 +1742,85 @@ func (q *Queries) CreateQuizSubmission(ctx context.Context, arg CreateQuizSubmis
 		&i.SubmittedAt,
 		&i.Status,
 		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const createReminder = `-- name: CreateReminder :one
+INSERT INTO reminders (
+  list_id, user_id, title, notes, due_date, priority
+) VALUES (
+  $1, $2, $3, $4, $5, $6
+)
+RETURNING reminder_id, list_id, user_id, title, notes, due_date, priority, is_completed, created_at, updated_at
+`
+
+type CreateReminderParams struct {
+	ListID   uuid.UUID
+	UserID   uuid.UUID
+	Title    string
+	Notes    sql.NullString
+	DueDate  sql.NullTime
+	Priority sql.NullString
+}
+
+func (q *Queries) CreateReminder(ctx context.Context, arg CreateReminderParams) (Reminder, error) {
+	row := q.db.QueryRowContext(ctx, createReminder,
+		arg.ListID,
+		arg.UserID,
+		arg.Title,
+		arg.Notes,
+		arg.DueDate,
+		arg.Priority,
+	)
+	var i Reminder
+	err := row.Scan(
+		&i.ReminderID,
+		&i.ListID,
+		&i.UserID,
+		&i.Title,
+		&i.Notes,
+		&i.DueDate,
+		&i.Priority,
+		&i.IsCompleted,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createReminderList = `-- name: CreateReminderList :one
+INSERT INTO reminder_lists (
+  school_id, user_id, title, color
+) VALUES (
+  $1, $2, $3, $4
+)
+RETURNING list_id, school_id, user_id, title, color, created_at, updated_at
+`
+
+type CreateReminderListParams struct {
+	SchoolID uuid.NullUUID
+	UserID   uuid.UUID
+	Title    string
+	Color    sql.NullString
+}
+
+func (q *Queries) CreateReminderList(ctx context.Context, arg CreateReminderListParams) (ReminderList, error) {
+	row := q.db.QueryRowContext(ctx, createReminderList,
+		arg.SchoolID,
+		arg.UserID,
+		arg.Title,
+		arg.Color,
+	)
+	var i ReminderList
+	err := row.Scan(
+		&i.ListID,
+		&i.SchoolID,
+		&i.UserID,
+		&i.Title,
+		&i.Color,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2345,6 +2508,16 @@ func (q *Queries) DeleteBadge(ctx context.Context, arg DeleteBadgeParams) error 
 	return err
 }
 
+const deleteBanner = `-- name: DeleteBanner :exec
+DELETE FROM banners
+WHERE banner_id = $1
+`
+
+func (q *Queries) DeleteBanner(ctx context.Context, bannerID uuid.UUID) error {
+	_, err := q.db.ExecContext(ctx, deleteBanner, bannerID)
+	return err
+}
+
 const deleteBillingContact = `-- name: DeleteBillingContact :exec
 DELETE FROM billing_contacts
 WHERE billing_contact_id = $1 AND school_id = $2
@@ -2507,6 +2680,21 @@ func (q *Queries) DeleteQuiz(ctx context.Context, arg DeleteQuizParams) error {
 	return err
 }
 
+const deleteReminder = `-- name: DeleteReminder :exec
+DELETE FROM reminders
+WHERE reminder_id = $1 AND user_id = $2
+`
+
+type DeleteReminderParams struct {
+	ReminderID uuid.UUID
+	UserID     uuid.UUID
+}
+
+func (q *Queries) DeleteReminder(ctx context.Context, arg DeleteReminderParams) error {
+	_, err := q.db.ExecContext(ctx, deleteReminder, arg.ReminderID, arg.UserID)
+	return err
+}
+
 const deleteRoom = `-- name: DeleteRoom :exec
 DELETE FROM rooms
 WHERE room_id = $1 AND school_id = $2
@@ -2651,8 +2839,47 @@ func (q *Queries) EnrollShortCourse(ctx context.Context, arg EnrollShortCoursePa
 	return i, err
 }
 
+const getActiveBanners = `-- name: GetActiveBanners :many
+SELECT banner_id, school_id, title, image_url, target_url, is_active, "order", created_at, updated_at FROM banners
+WHERE (school_id = $1 OR school_id IS NULL) AND is_active = true
+ORDER BY "order" ASC, created_at DESC
+`
+
+func (q *Queries) GetActiveBanners(ctx context.Context, schoolID uuid.NullUUID) ([]Banner, error) {
+	rows, err := q.db.QueryContext(ctx, getActiveBanners, schoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Banner
+	for rows.Next() {
+		var i Banner
+		if err := rows.Scan(
+			&i.BannerID,
+			&i.SchoolID,
+			&i.Title,
+			&i.ImageUrl,
+			&i.TargetUrl,
+			&i.IsActive,
+			&i.Order,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAssignmentByID = `-- name: GetAssignmentByID :one
-SELECT assignment_id, school_id, class_id, teacher_id, title, description, due_date, max_score, assignment_type, file_url, quiz_id, grade_category_id, created_at, updated_at FROM assignments
+SELECT assignment_id, school_id, class_id, teacher_id, title, description, due_date, max_score, assignment_type, file_url, quiz_id, grade_category_id, created_at, updated_at, subject_id FROM assignments
 WHERE assignment_id = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -2679,12 +2906,13 @@ func (q *Queries) GetAssignmentByID(ctx context.Context, arg GetAssignmentByIDPa
 		&i.GradeCategoryID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SubjectID,
 	)
 	return i, err
 }
 
 const getAssignmentsByClass = `-- name: GetAssignmentsByClass :many
-SELECT assignment_id, school_id, class_id, teacher_id, title, description, due_date, max_score, assignment_type, file_url, quiz_id, grade_category_id, created_at, updated_at FROM assignments
+SELECT assignment_id, school_id, class_id, teacher_id, title, description, due_date, max_score, assignment_type, file_url, quiz_id, grade_category_id, created_at, updated_at, subject_id FROM assignments
 WHERE class_id = $1 AND school_id = $2
 `
 
@@ -2717,6 +2945,80 @@ func (q *Queries) GetAssignmentsByClass(ctx context.Context, arg GetAssignmentsB
 			&i.GradeCategoryID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SubjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssignmentsBySubject = `-- name: GetAssignmentsBySubject :many
+SELECT a.assignment_id, a.school_id, a.class_id, a.teacher_id, a.title, a.description, a.due_date, a.max_score, a.assignment_type, a.file_url, a.quiz_id, a.grade_category_id, a.created_at, a.updated_at, a.subject_id, ac.class_name
+FROM assignments a
+JOIN academic_classes ac ON a.class_id = ac.class_id
+WHERE a.subject_id = $1 AND a.school_id = $2
+ORDER BY a.due_date DESC
+`
+
+type GetAssignmentsBySubjectParams struct {
+	SubjectID uuid.NullUUID
+	SchoolID  uuid.UUID
+}
+
+type GetAssignmentsBySubjectRow struct {
+	AssignmentID    uuid.UUID
+	SchoolID        uuid.UUID
+	ClassID         uuid.UUID
+	TeacherID       uuid.UUID
+	Title           string
+	Description     sql.NullString
+	DueDate         sql.NullTime
+	MaxScore        string
+	AssignmentType  string
+	FileUrl         sql.NullString
+	QuizID          uuid.NullUUID
+	GradeCategoryID uuid.NullUUID
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	SubjectID       uuid.NullUUID
+	ClassName       string
+}
+
+// Subject Specific Data
+func (q *Queries) GetAssignmentsBySubject(ctx context.Context, arg GetAssignmentsBySubjectParams) ([]GetAssignmentsBySubjectRow, error) {
+	rows, err := q.db.QueryContext(ctx, getAssignmentsBySubject, arg.SubjectID, arg.SchoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAssignmentsBySubjectRow
+	for rows.Next() {
+		var i GetAssignmentsBySubjectRow
+		if err := rows.Scan(
+			&i.AssignmentID,
+			&i.SchoolID,
+			&i.ClassID,
+			&i.TeacherID,
+			&i.Title,
+			&i.Description,
+			&i.DueDate,
+			&i.MaxScore,
+			&i.AssignmentType,
+			&i.FileUrl,
+			&i.QuizID,
+			&i.GradeCategoryID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SubjectID,
+			&i.ClassName,
 		); err != nil {
 			return nil, err
 		}
@@ -3191,6 +3493,342 @@ func (q *Queries) GetChatRoomsByUser(ctx context.Context, userID uuid.UUID) ([]C
 			pq.Array(&i.AllowedFileTypes),
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChildAssignments = `-- name: GetChildAssignments :many
+SELECT a.assignment_id, a.school_id, a.class_id, a.teacher_id, a.title, a.description, a.due_date, a.max_score, a.assignment_type, a.file_url, a.quiz_id, a.grade_category_id, a.created_at, a.updated_at, a.subject_id, ac.class_name,
+       (SELECT s.status FROM submissions s WHERE s.student_id = $1 AND s.assignment_id = a.assignment_id LIMIT 1) as submission_status
+FROM assignments a
+JOIN academic_classes ac ON a.class_id = ac.class_id
+JOIN enrollments e ON ac.class_id = e.class_id
+WHERE e.student_id = $1 AND a.school_id = $2
+ORDER BY a.due_date DESC
+`
+
+type GetChildAssignmentsParams struct {
+	StudentID uuid.UUID
+	SchoolID  uuid.UUID
+}
+
+type GetChildAssignmentsRow struct {
+	AssignmentID     uuid.UUID
+	SchoolID         uuid.UUID
+	ClassID          uuid.UUID
+	TeacherID        uuid.UUID
+	Title            string
+	Description      sql.NullString
+	DueDate          sql.NullTime
+	MaxScore         string
+	AssignmentType   string
+	FileUrl          sql.NullString
+	QuizID           uuid.NullUUID
+	GradeCategoryID  uuid.NullUUID
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	SubjectID        uuid.NullUUID
+	ClassName        string
+	SubmissionStatus string
+}
+
+// Parent Monitoring: Get child assignments
+func (q *Queries) GetChildAssignments(ctx context.Context, arg GetChildAssignmentsParams) ([]GetChildAssignmentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChildAssignments, arg.StudentID, arg.SchoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChildAssignmentsRow
+	for rows.Next() {
+		var i GetChildAssignmentsRow
+		if err := rows.Scan(
+			&i.AssignmentID,
+			&i.SchoolID,
+			&i.ClassID,
+			&i.TeacherID,
+			&i.Title,
+			&i.Description,
+			&i.DueDate,
+			&i.MaxScore,
+			&i.AssignmentType,
+			&i.FileUrl,
+			&i.QuizID,
+			&i.GradeCategoryID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SubjectID,
+			&i.ClassName,
+			&i.SubmissionStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChildAttendance = `-- name: GetChildAttendance :many
+SELECT a.attendance_id, a.school_id, a.student_id, a.class_id, a.attendance_date, a.status, a.notes, a.created_at, a.updated_at, ac.class_name
+FROM attendance_records a
+JOIN academic_classes ac ON a.class_id = ac.class_id
+WHERE a.student_id = $1 AND a.school_id = $2
+ORDER BY a.attendance_date DESC
+`
+
+type GetChildAttendanceParams struct {
+	StudentID uuid.UUID
+	SchoolID  uuid.UUID
+}
+
+type GetChildAttendanceRow struct {
+	AttendanceID   uuid.UUID
+	SchoolID       uuid.UUID
+	StudentID      uuid.UUID
+	ClassID        uuid.UUID
+	AttendanceDate time.Time
+	Status         string
+	Notes          sql.NullString
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	ClassName      string
+}
+
+// Parent Monitoring: Get child attendance records
+func (q *Queries) GetChildAttendance(ctx context.Context, arg GetChildAttendanceParams) ([]GetChildAttendanceRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChildAttendance, arg.StudentID, arg.SchoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChildAttendanceRow
+	for rows.Next() {
+		var i GetChildAttendanceRow
+		if err := rows.Scan(
+			&i.AttendanceID,
+			&i.SchoolID,
+			&i.StudentID,
+			&i.ClassID,
+			&i.AttendanceDate,
+			&i.Status,
+			&i.Notes,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ClassName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChildFees = `-- name: GetChildFees :many
+SELECT sf.student_fee_id, sf.school_id, sf.student_id, sf.fee_structure_id, sf.amount_due, sf.amount_paid, sf.due_date, sf.status, sf.notes, sf.created_at, sf.updated_at, fs.fee_name, fs.amount as fee_amount,
+       COALESCE(sf.amount_paid, 0) as total_paid,
+       (sf.amount_due - COALESCE(sf.amount_paid, 0)) as balance
+FROM student_fees sf
+JOIN fee_structures fs ON sf.fee_structure_id = fs.fee_structure_id
+WHERE sf.student_id = $1 AND sf.school_id = $2
+ORDER BY sf.due_date DESC
+`
+
+type GetChildFeesParams struct {
+	StudentID uuid.UUID
+	SchoolID  uuid.UUID
+}
+
+type GetChildFeesRow struct {
+	StudentFeeID   uuid.UUID
+	SchoolID       uuid.UUID
+	StudentID      uuid.UUID
+	FeeStructureID uuid.UUID
+	AmountDue      string
+	AmountPaid     string
+	DueDate        sql.NullTime
+	Status         string
+	Notes          sql.NullString
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	FeeName        string
+	FeeAmount      string
+	TotalPaid      string
+	Balance        int32
+}
+
+// Parent Monitoring: Get child fees
+func (q *Queries) GetChildFees(ctx context.Context, arg GetChildFeesParams) ([]GetChildFeesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChildFees, arg.StudentID, arg.SchoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChildFeesRow
+	for rows.Next() {
+		var i GetChildFeesRow
+		if err := rows.Scan(
+			&i.StudentFeeID,
+			&i.SchoolID,
+			&i.StudentID,
+			&i.FeeStructureID,
+			&i.AmountDue,
+			&i.AmountPaid,
+			&i.DueDate,
+			&i.Status,
+			&i.Notes,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.FeeName,
+			&i.FeeAmount,
+			&i.TotalPaid,
+			&i.Balance,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChildGrades = `-- name: GetChildGrades :many
+SELECT g.grade_id, g.school_id, g.submission_id, g.graded_by_user_id, g.score, g.feedback, g.graded_at, g.created_at, g.updated_at, s.submission_id, a.title as assignment_title, a.max_score,
+       u.first_name as grader_first_name, u.last_name as grader_last_name
+FROM grades g
+JOIN submissions s ON g.submission_id = s.submission_id
+JOIN assignments a ON s.assignment_id = a.assignment_id
+LEFT JOIN users u ON g.graded_by_user_id = u.user_id
+WHERE s.student_id = $1 AND g.school_id = $2
+ORDER BY g.graded_at DESC
+`
+
+type GetChildGradesParams struct {
+	StudentID uuid.UUID
+	SchoolID  uuid.UUID
+}
+
+type GetChildGradesRow struct {
+	GradeID         uuid.UUID
+	SchoolID        uuid.UUID
+	SubmissionID    uuid.UUID
+	GradedByUserID  uuid.NullUUID
+	Score           string
+	Feedback        sql.NullString
+	GradedAt        time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	SubmissionID_2  uuid.UUID
+	AssignmentTitle string
+	MaxScore        string
+	GraderFirstName sql.NullString
+	GraderLastName  sql.NullString
+}
+
+// Parent Monitoring: Get child grades
+func (q *Queries) GetChildGrades(ctx context.Context, arg GetChildGradesParams) ([]GetChildGradesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChildGrades, arg.StudentID, arg.SchoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChildGradesRow
+	for rows.Next() {
+		var i GetChildGradesRow
+		if err := rows.Scan(
+			&i.GradeID,
+			&i.SchoolID,
+			&i.SubmissionID,
+			&i.GradedByUserID,
+			&i.Score,
+			&i.Feedback,
+			&i.GradedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SubmissionID_2,
+			&i.AssignmentTitle,
+			&i.MaxScore,
+			&i.GraderFirstName,
+			&i.GraderLastName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getChildrenForParent = `-- name: GetChildrenForParent :many
+SELECT u.user_id, u.first_name, u.last_name, u.profile_picture_url, sp.current_grade_level, s.school_name
+FROM parent_student_relationships psr
+JOIN users u ON psr.student_user_id = u.user_id
+JOIN student_profiles sp ON u.user_id = sp.user_id
+JOIN schools s ON psr.school_id = s.school_id
+WHERE psr.parent_user_id = $1 AND psr.school_id = $2
+`
+
+type GetChildrenForParentParams struct {
+	ParentUserID uuid.UUID
+	SchoolID     uuid.UUID
+}
+
+type GetChildrenForParentRow struct {
+	UserID            uuid.UUID
+	FirstName         string
+	LastName          string
+	ProfilePictureUrl sql.NullString
+	CurrentGradeLevel sql.NullString
+	SchoolName        string
+}
+
+func (q *Queries) GetChildrenForParent(ctx context.Context, arg GetChildrenForParentParams) ([]GetChildrenForParentRow, error) {
+	rows, err := q.db.QueryContext(ctx, getChildrenForParent, arg.ParentUserID, arg.SchoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetChildrenForParentRow
+	for rows.Next() {
+		var i GetChildrenForParentRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.FirstName,
+			&i.LastName,
+			&i.ProfilePictureUrl,
+			&i.CurrentGradeLevel,
+			&i.SchoolName,
 		); err != nil {
 			return nil, err
 		}
@@ -3776,6 +4414,76 @@ func (q *Queries) GetDepartmentsBySchool(ctx context.Context, schoolID uuid.UUID
 	return items, nil
 }
 
+const getDetailedGrades = `-- name: GetDetailedGrades :many
+SELECT g.grade_id, g.school_id, g.submission_id, g.graded_by_user_id, g.score, g.feedback, g.graded_at, g.created_at, g.updated_at, a.title as assignment_title, a.max_score, ac.class_name, s.subject_name
+FROM grades g
+JOIN submissions sub ON g.submission_id = sub.submission_id
+JOIN assignments a ON sub.assignment_id = a.assignment_id
+JOIN academic_classes ac ON a.class_id = ac.class_id
+JOIN subjects s ON a.subject_id = s.subject_id
+WHERE sub.student_id = $1 AND g.school_id = $2
+ORDER BY ac.academic_year DESC, ac.semester DESC, g.graded_at DESC
+`
+
+type GetDetailedGradesParams struct {
+	StudentID uuid.UUID
+	SchoolID  uuid.UUID
+}
+
+type GetDetailedGradesRow struct {
+	GradeID         uuid.UUID
+	SchoolID        uuid.UUID
+	SubmissionID    uuid.UUID
+	GradedByUserID  uuid.NullUUID
+	Score           string
+	Feedback        sql.NullString
+	GradedAt        time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	AssignmentTitle string
+	MaxScore        string
+	ClassName       string
+	SubjectName     string
+}
+
+// Academic History
+func (q *Queries) GetDetailedGrades(ctx context.Context, arg GetDetailedGradesParams) ([]GetDetailedGradesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getDetailedGrades, arg.StudentID, arg.SchoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDetailedGradesRow
+	for rows.Next() {
+		var i GetDetailedGradesRow
+		if err := rows.Scan(
+			&i.GradeID,
+			&i.SchoolID,
+			&i.SubmissionID,
+			&i.GradedByUserID,
+			&i.Score,
+			&i.Feedback,
+			&i.GradedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AssignmentTitle,
+			&i.MaxScore,
+			&i.ClassName,
+			&i.SubjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getEnrollmentByID = `-- name: GetEnrollmentByID :one
 SELECT sce.enrollment_id, sce.school_id, sce.student_id, sce.course_id, sce.enrollment_date, sce.status, sce.attempt_type, sce.previous_enrollment_id, sce.created_at, sce.updated_at, c.course_name
 FROM short_course_enrollments sce
@@ -4230,7 +4938,7 @@ func (q *Queries) GetGradesBySubmission(ctx context.Context, arg GetGradesBySubm
 }
 
 const getLearningMaterialByID = `-- name: GetLearningMaterialByID :one
-SELECT material_id, school_id, uploaded_by_user_id, class_id, course_id, title, description, file_url, content, material_type, external_data, uploaded_at, created_at, updated_at FROM learning_materials
+SELECT material_id, school_id, uploaded_by_user_id, class_id, course_id, title, description, file_url, content, material_type, external_data, uploaded_at, created_at, updated_at, subject_id FROM learning_materials
 WHERE material_id = $1 AND school_id = $2 LIMIT 1
 `
 
@@ -4258,12 +4966,13 @@ func (q *Queries) GetLearningMaterialByID(ctx context.Context, arg GetLearningMa
 		&i.UploadedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SubjectID,
 	)
 	return i, err
 }
 
 const getLearningMaterials = `-- name: GetLearningMaterials :many
-SELECT lm.material_id, lm.school_id, lm.uploaded_by_user_id, lm.class_id, lm.course_id, lm.title, lm.description, lm.file_url, lm.content, lm.material_type, lm.external_data, lm.uploaded_at, lm.created_at, lm.updated_at, u.first_name as uploader_first_name, u.last_name as uploader_last_name, ac.class_name, co.course_name
+SELECT lm.material_id, lm.school_id, lm.uploaded_by_user_id, lm.class_id, lm.course_id, lm.title, lm.description, lm.file_url, lm.content, lm.material_type, lm.external_data, lm.uploaded_at, lm.created_at, lm.updated_at, lm.subject_id, u.first_name as uploader_first_name, u.last_name as uploader_last_name, ac.class_name, co.course_name
 FROM learning_materials lm
 JOIN users u ON lm.uploaded_by_user_id = u.user_id
 LEFT JOIN academic_classes ac ON lm.class_id = ac.class_id
@@ -4295,6 +5004,7 @@ type GetLearningMaterialsRow struct {
 	UploadedAt        time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	SubjectID         uuid.NullUUID
 	UploaderFirstName string
 	UploaderLastName  string
 	ClassName         sql.NullString
@@ -4325,6 +5035,7 @@ func (q *Queries) GetLearningMaterials(ctx context.Context, arg GetLearningMater
 			&i.UploadedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SubjectID,
 			&i.UploaderFirstName,
 			&i.UploaderLastName,
 			&i.ClassName,
@@ -4446,6 +5157,80 @@ func (q *Queries) GetLessonPlans(ctx context.Context, arg GetLessonPlansParams) 
 			&i.TeacherFirstName,
 			&i.TeacherLastName,
 			&i.ClassName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getMaterialsBySubject = `-- name: GetMaterialsBySubject :many
+SELECT lm.material_id, lm.school_id, lm.uploaded_by_user_id, lm.class_id, lm.course_id, lm.title, lm.description, lm.file_url, lm.content, lm.material_type, lm.external_data, lm.uploaded_at, lm.created_at, lm.updated_at, lm.subject_id, u.first_name as uploader_first_name, u.last_name as uploader_last_name
+FROM learning_materials lm
+JOIN users u ON lm.uploaded_by_user_id = u.user_id
+WHERE lm.subject_id = $1 AND lm.school_id = $2
+ORDER BY lm.uploaded_at DESC
+`
+
+type GetMaterialsBySubjectParams struct {
+	SubjectID uuid.NullUUID
+	SchoolID  uuid.UUID
+}
+
+type GetMaterialsBySubjectRow struct {
+	MaterialID        uuid.UUID
+	SchoolID          uuid.UUID
+	UploadedByUserID  uuid.UUID
+	ClassID           uuid.NullUUID
+	CourseID          uuid.NullUUID
+	Title             string
+	Description       sql.NullString
+	FileUrl           sql.NullString
+	Content           sql.NullString
+	MaterialType      MaterialType
+	ExternalData      pqtype.NullRawMessage
+	UploadedAt        time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	SubjectID         uuid.NullUUID
+	UploaderFirstName string
+	UploaderLastName  string
+}
+
+func (q *Queries) GetMaterialsBySubject(ctx context.Context, arg GetMaterialsBySubjectParams) ([]GetMaterialsBySubjectRow, error) {
+	rows, err := q.db.QueryContext(ctx, getMaterialsBySubject, arg.SubjectID, arg.SchoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetMaterialsBySubjectRow
+	for rows.Next() {
+		var i GetMaterialsBySubjectRow
+		if err := rows.Scan(
+			&i.MaterialID,
+			&i.SchoolID,
+			&i.UploadedByUserID,
+			&i.ClassID,
+			&i.CourseID,
+			&i.Title,
+			&i.Description,
+			&i.FileUrl,
+			&i.Content,
+			&i.MaterialType,
+			&i.ExternalData,
+			&i.UploadedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SubjectID,
+			&i.UploaderFirstName,
+			&i.UploaderLastName,
 		); err != nil {
 			return nil, err
 		}
@@ -4621,6 +5406,79 @@ func (q *Queries) GetMeetingsBySchool(ctx context.Context, schoolID uuid.UUID) (
 	return items, nil
 }
 
+const getMyAssignments = `-- name: GetMyAssignments :many
+SELECT a.assignment_id, a.school_id, a.class_id, a.teacher_id, a.title, a.description, a.due_date, a.max_score, a.assignment_type, a.file_url, a.quiz_id, a.grade_category_id, a.created_at, a.updated_at, a.subject_id, ac.class_name
+FROM assignments a
+JOIN academic_classes ac ON a.class_id = ac.class_id
+JOIN enrollments e ON ac.class_id = e.class_id
+WHERE e.student_id = $1 AND a.school_id = $2
+ORDER BY a.due_date ASC
+`
+
+type GetMyAssignmentsParams struct {
+	StudentID uuid.UUID
+	SchoolID  uuid.UUID
+}
+
+type GetMyAssignmentsRow struct {
+	AssignmentID    uuid.UUID
+	SchoolID        uuid.UUID
+	ClassID         uuid.UUID
+	TeacherID       uuid.UUID
+	Title           string
+	Description     sql.NullString
+	DueDate         sql.NullTime
+	MaxScore        string
+	AssignmentType  string
+	FileUrl         sql.NullString
+	QuizID          uuid.NullUUID
+	GradeCategoryID uuid.NullUUID
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	SubjectID       uuid.NullUUID
+	ClassName       string
+}
+
+func (q *Queries) GetMyAssignments(ctx context.Context, arg GetMyAssignmentsParams) ([]GetMyAssignmentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getMyAssignments, arg.StudentID, arg.SchoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetMyAssignmentsRow
+	for rows.Next() {
+		var i GetMyAssignmentsRow
+		if err := rows.Scan(
+			&i.AssignmentID,
+			&i.SchoolID,
+			&i.ClassID,
+			&i.TeacherID,
+			&i.Title,
+			&i.Description,
+			&i.DueDate,
+			&i.MaxScore,
+			&i.AssignmentType,
+			&i.FileUrl,
+			&i.QuizID,
+			&i.GradeCategoryID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SubjectID,
+			&i.ClassName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getNewsletterByID = `-- name: GetNewsletterByID :one
 SELECT newsletter_id, title, content, sent_at, sent_by_user_id, target_schools, attachments, created_at, updated_at, deleted_at FROM newsletters
 WHERE newsletter_id = $1 LIMIT 1
@@ -4704,7 +5562,7 @@ func (q *Queries) GetNewsletters(ctx context.Context, dollar_1 json.RawMessage) 
 }
 
 const getNotificationsByRecipient = `-- name: GetNotificationsByRecipient :many
-SELECT n.notification_id, n.school_id, n.sender_id, n.notification_type, n.title, n.message, n.link_url, n.entity_type, n.entity_id, n.sent_at, n.created_at, n.updated_at, u.first_name as sender_first_name, u.last_name as sender_last_name, nr.is_read, nr.read_at
+SELECT n.notification_id, n.school_id, n.sender_id, n.notification_type, n.title, n.message, n.link_url, n.entity_type, n.entity_id, n.sent_at, n.created_at, n.updated_at, n.subject_id, u.first_name as sender_first_name, u.last_name as sender_last_name, nr.is_read, nr.read_at
 FROM notifications n
 JOIN notification_recipients nr ON n.notification_id = nr.notification_id
 LEFT JOIN users u ON n.sender_id = u.user_id
@@ -4725,6 +5583,7 @@ type GetNotificationsByRecipientRow struct {
 	SentAt           time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	SubjectID        uuid.NullUUID
 	SenderFirstName  sql.NullString
 	SenderLastName   sql.NullString
 	IsRead           bool
@@ -4753,6 +5612,82 @@ func (q *Queries) GetNotificationsByRecipient(ctx context.Context, recipientID u
 			&i.SentAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SubjectID,
+			&i.SenderFirstName,
+			&i.SenderLastName,
+			&i.IsRead,
+			&i.ReadAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getNotificationsBySubject = `-- name: GetNotificationsBySubject :many
+SELECT n.notification_id, n.school_id, n.sender_id, n.notification_type, n.title, n.message, n.link_url, n.entity_type, n.entity_id, n.sent_at, n.created_at, n.updated_at, n.subject_id, u.first_name as sender_first_name, u.last_name as sender_last_name, nr.is_read, nr.read_at
+FROM notifications n
+JOIN notification_recipients nr ON n.notification_id = nr.notification_id
+LEFT JOIN users u ON n.sender_id = u.user_id
+WHERE n.subject_id = $1 AND nr.recipient_id = $2
+ORDER BY n.sent_at DESC
+`
+
+type GetNotificationsBySubjectParams struct {
+	SubjectID   uuid.NullUUID
+	RecipientID uuid.UUID
+}
+
+type GetNotificationsBySubjectRow struct {
+	NotificationID   uuid.UUID
+	SchoolID         uuid.UUID
+	SenderID         uuid.NullUUID
+	NotificationType NotificationType
+	Title            string
+	Message          string
+	LinkUrl          sql.NullString
+	EntityType       sql.NullString
+	EntityID         sql.NullString
+	SentAt           time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	SubjectID        uuid.NullUUID
+	SenderFirstName  sql.NullString
+	SenderLastName   sql.NullString
+	IsRead           bool
+	ReadAt           sql.NullTime
+}
+
+func (q *Queries) GetNotificationsBySubject(ctx context.Context, arg GetNotificationsBySubjectParams) ([]GetNotificationsBySubjectRow, error) {
+	rows, err := q.db.QueryContext(ctx, getNotificationsBySubject, arg.SubjectID, arg.RecipientID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetNotificationsBySubjectRow
+	for rows.Next() {
+		var i GetNotificationsBySubjectRow
+		if err := rows.Scan(
+			&i.NotificationID,
+			&i.SchoolID,
+			&i.SenderID,
+			&i.NotificationType,
+			&i.Title,
+			&i.Message,
+			&i.LinkUrl,
+			&i.EntityType,
+			&i.EntityID,
+			&i.SentAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SubjectID,
 			&i.SenderFirstName,
 			&i.SenderLastName,
 			&i.IsRead,
@@ -4928,6 +5863,71 @@ func (q *Queries) GetParentByUserID(ctx context.Context, arg GetParentByUserIDPa
 		&i.EmergencyContactPhone,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getParentFullProfile = `-- name: GetParentFullProfile :one
+SELECT u.user_id, u.school_id, u.role_id, u.first_name, u.last_name, u.email, u.contact_email, u.firebase_uid, u.password_hash, u.phone_number, u.date_of_birth, u.gender, u.profile_picture_url, u.is_active, u.created_at, u.updated_at, u.deleted_at, u.search_vector, r.role_name, pp.home_address, pp.occupation, pp.emergency_contact_name, pp.emergency_contact_phone
+FROM users u
+JOIN roles r ON u.role_id = r.role_id
+JOIN parent_profiles pp ON u.user_id = pp.user_id
+WHERE u.user_id = $1 LIMIT 1
+`
+
+type GetParentFullProfileRow struct {
+	UserID                uuid.UUID
+	SchoolID              uuid.NullUUID
+	RoleID                uuid.UUID
+	FirstName             string
+	LastName              string
+	Email                 string
+	ContactEmail          sql.NullString
+	FirebaseUid           sql.NullString
+	PasswordHash          sql.NullString
+	PhoneNumber           sql.NullString
+	DateOfBirth           sql.NullTime
+	Gender                sql.NullString
+	ProfilePictureUrl     sql.NullString
+	IsActive              bool
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	DeletedAt             sql.NullTime
+	SearchVector          interface{}
+	RoleName              string
+	HomeAddress           sql.NullString
+	Occupation            sql.NullString
+	EmergencyContactName  sql.NullString
+	EmergencyContactPhone sql.NullString
+}
+
+func (q *Queries) GetParentFullProfile(ctx context.Context, userID uuid.UUID) (GetParentFullProfileRow, error) {
+	row := q.db.QueryRowContext(ctx, getParentFullProfile, userID)
+	var i GetParentFullProfileRow
+	err := row.Scan(
+		&i.UserID,
+		&i.SchoolID,
+		&i.RoleID,
+		&i.FirstName,
+		&i.LastName,
+		&i.Email,
+		&i.ContactEmail,
+		&i.FirebaseUid,
+		&i.PasswordHash,
+		&i.PhoneNumber,
+		&i.DateOfBirth,
+		&i.Gender,
+		&i.ProfilePictureUrl,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.SearchVector,
+		&i.RoleName,
+		&i.HomeAddress,
+		&i.Occupation,
+		&i.EmergencyContactName,
+		&i.EmergencyContactPhone,
 	)
 	return i, err
 }
@@ -5953,6 +6953,139 @@ func (q *Queries) GetStudentFeesBySchool(ctx context.Context, schoolID uuid.UUID
 		return nil, err
 	}
 	return items, nil
+}
+
+const getStudentFeesByStudent = `-- name: GetStudentFeesByStudent :many
+SELECT sf.student_fee_id, sf.school_id, sf.student_id, sf.fee_structure_id, sf.amount_due, sf.amount_paid, sf.due_date, sf.status, sf.notes, sf.created_at, sf.updated_at, fs.fee_name, fs.amount as fee_amount
+FROM student_fees sf
+JOIN fee_structures fs ON sf.fee_structure_id = fs.fee_structure_id
+WHERE sf.student_id = $1 AND sf.school_id = $2
+ORDER BY sf.created_at DESC
+`
+
+type GetStudentFeesByStudentParams struct {
+	StudentID uuid.UUID
+	SchoolID  uuid.UUID
+}
+
+type GetStudentFeesByStudentRow struct {
+	StudentFeeID   uuid.UUID
+	SchoolID       uuid.UUID
+	StudentID      uuid.UUID
+	FeeStructureID uuid.UUID
+	AmountDue      string
+	AmountPaid     string
+	DueDate        sql.NullTime
+	Status         string
+	Notes          sql.NullString
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	FeeName        string
+	FeeAmount      string
+}
+
+func (q *Queries) GetStudentFeesByStudent(ctx context.Context, arg GetStudentFeesByStudentParams) ([]GetStudentFeesByStudentRow, error) {
+	rows, err := q.db.QueryContext(ctx, getStudentFeesByStudent, arg.StudentID, arg.SchoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetStudentFeesByStudentRow
+	for rows.Next() {
+		var i GetStudentFeesByStudentRow
+		if err := rows.Scan(
+			&i.StudentFeeID,
+			&i.SchoolID,
+			&i.StudentID,
+			&i.FeeStructureID,
+			&i.AmountDue,
+			&i.AmountPaid,
+			&i.DueDate,
+			&i.Status,
+			&i.Notes,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.FeeName,
+			&i.FeeAmount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getStudentFullProfile = `-- name: GetStudentFullProfile :one
+SELECT u.user_id, u.school_id, u.role_id, u.first_name, u.last_name, u.email, u.contact_email, u.firebase_uid, u.password_hash, u.phone_number, u.date_of_birth, u.gender, u.profile_picture_url, u.is_active, u.created_at, u.updated_at, u.deleted_at, u.search_vector, r.role_name, sp.enrollment_number, sp.current_grade_level, sp.admission_date, ac.class_name as current_class_name
+FROM users u
+JOIN roles r ON u.role_id = r.role_id
+JOIN student_profiles sp ON u.user_id = sp.user_id
+LEFT JOIN academic_classes ac ON sp.current_class_id = ac.class_id
+WHERE u.user_id = $1 LIMIT 1
+`
+
+type GetStudentFullProfileRow struct {
+	UserID            uuid.UUID
+	SchoolID          uuid.NullUUID
+	RoleID            uuid.UUID
+	FirstName         string
+	LastName          string
+	Email             string
+	ContactEmail      sql.NullString
+	FirebaseUid       sql.NullString
+	PasswordHash      sql.NullString
+	PhoneNumber       sql.NullString
+	DateOfBirth       sql.NullTime
+	Gender            sql.NullString
+	ProfilePictureUrl sql.NullString
+	IsActive          bool
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	DeletedAt         sql.NullTime
+	SearchVector      interface{}
+	RoleName          string
+	EnrollmentNumber  string
+	CurrentGradeLevel sql.NullString
+	AdmissionDate     time.Time
+	CurrentClassName  sql.NullString
+}
+
+// Full Profile
+func (q *Queries) GetStudentFullProfile(ctx context.Context, userID uuid.UUID) (GetStudentFullProfileRow, error) {
+	row := q.db.QueryRowContext(ctx, getStudentFullProfile, userID)
+	var i GetStudentFullProfileRow
+	err := row.Scan(
+		&i.UserID,
+		&i.SchoolID,
+		&i.RoleID,
+		&i.FirstName,
+		&i.LastName,
+		&i.Email,
+		&i.ContactEmail,
+		&i.FirebaseUid,
+		&i.PasswordHash,
+		&i.PhoneNumber,
+		&i.DateOfBirth,
+		&i.Gender,
+		&i.ProfilePictureUrl,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.SearchVector,
+		&i.RoleName,
+		&i.EnrollmentNumber,
+		&i.CurrentGradeLevel,
+		&i.AdmissionDate,
+		&i.CurrentClassName,
+	)
+	return i, err
 }
 
 const getStudentProfileByUserID = `-- name: GetStudentProfileByUserID :one
@@ -6990,6 +8123,67 @@ func (q *Queries) GetUserByEmail(ctx context.Context, arg GetUserByEmailParams) 
 	return i, err
 }
 
+const getUserByEmailOnly = `-- name: GetUserByEmailOnly :one
+
+SELECT u.user_id, u.school_id, u.role_id, u.first_name, u.last_name, u.email, u.contact_email, u.firebase_uid, u.password_hash, u.phone_number, u.date_of_birth, u.gender, u.profile_picture_url, u.is_active, u.created_at, u.updated_at, u.deleted_at, u.search_vector, r.role_name
+FROM users u
+JOIN roles r ON u.role_id = r.role_id
+WHERE u.email = $1 LIMIT 1
+`
+
+type GetUserByEmailOnlyRow struct {
+	UserID            uuid.UUID
+	SchoolID          uuid.NullUUID
+	RoleID            uuid.UUID
+	FirstName         string
+	LastName          string
+	Email             string
+	ContactEmail      sql.NullString
+	FirebaseUid       sql.NullString
+	PasswordHash      sql.NullString
+	PhoneNumber       sql.NullString
+	DateOfBirth       sql.NullTime
+	Gender            sql.NullString
+	ProfilePictureUrl sql.NullString
+	IsActive          bool
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	DeletedAt         sql.NullTime
+	SearchVector      interface{}
+	RoleName          string
+}
+
+// =============================================
+// PARENT MONITORING & AUTH QUERIES
+// =============================================
+// Auth: Get user by email without school_id constraint (for JWT lookup)
+func (q *Queries) GetUserByEmailOnly(ctx context.Context, email string) (GetUserByEmailOnlyRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserByEmailOnly, email)
+	var i GetUserByEmailOnlyRow
+	err := row.Scan(
+		&i.UserID,
+		&i.SchoolID,
+		&i.RoleID,
+		&i.FirstName,
+		&i.LastName,
+		&i.Email,
+		&i.ContactEmail,
+		&i.FirebaseUid,
+		&i.PasswordHash,
+		&i.PhoneNumber,
+		&i.DateOfBirth,
+		&i.Gender,
+		&i.ProfilePictureUrl,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.SearchVector,
+		&i.RoleName,
+	)
+	return i, err
+}
+
 const getUserByFirebaseUID = `-- name: GetUserByFirebaseUID :one
 SELECT u.user_id, u.school_id, u.role_id, u.first_name, u.last_name, u.email, u.contact_email, u.firebase_uid, u.password_hash, u.phone_number, u.date_of_birth, u.gender, u.profile_picture_url, u.is_active, u.created_at, u.updated_at, u.deleted_at, u.search_vector, r.role_name
 FROM users u
@@ -7023,6 +8217,63 @@ type GetUserByFirebaseUIDRow struct {
 func (q *Queries) GetUserByFirebaseUID(ctx context.Context, firebaseUid sql.NullString) (GetUserByFirebaseUIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getUserByFirebaseUID, firebaseUid)
 	var i GetUserByFirebaseUIDRow
+	err := row.Scan(
+		&i.UserID,
+		&i.SchoolID,
+		&i.RoleID,
+		&i.FirstName,
+		&i.LastName,
+		&i.Email,
+		&i.ContactEmail,
+		&i.FirebaseUid,
+		&i.PasswordHash,
+		&i.PhoneNumber,
+		&i.DateOfBirth,
+		&i.Gender,
+		&i.ProfilePictureUrl,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.SearchVector,
+		&i.RoleName,
+	)
+	return i, err
+}
+
+const getUserByID = `-- name: GetUserByID :one
+SELECT u.user_id, u.school_id, u.role_id, u.first_name, u.last_name, u.email, u.contact_email, u.firebase_uid, u.password_hash, u.phone_number, u.date_of_birth, u.gender, u.profile_picture_url, u.is_active, u.created_at, u.updated_at, u.deleted_at, u.search_vector, r.role_name
+FROM users u
+JOIN roles r ON u.role_id = r.role_id
+WHERE u.user_id = $1 LIMIT 1
+`
+
+type GetUserByIDRow struct {
+	UserID            uuid.UUID
+	SchoolID          uuid.NullUUID
+	RoleID            uuid.UUID
+	FirstName         string
+	LastName          string
+	Email             string
+	ContactEmail      sql.NullString
+	FirebaseUid       sql.NullString
+	PasswordHash      sql.NullString
+	PhoneNumber       sql.NullString
+	DateOfBirth       sql.NullTime
+	Gender            sql.NullString
+	ProfilePictureUrl sql.NullString
+	IsActive          bool
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	DeletedAt         sql.NullTime
+	SearchVector      interface{}
+	RoleName          string
+}
+
+// Auth: Get user by ID (for JWT sub claim lookup)
+func (q *Queries) GetUserByID(ctx context.Context, userID uuid.UUID) (GetUserByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserByID, userID)
+	var i GetUserByIDRow
 	err := row.Scan(
 		&i.UserID,
 		&i.SchoolID,
@@ -7090,6 +8341,50 @@ func (q *Queries) GradeShortCourse(ctx context.Context, arg GradeShortCoursePara
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const listAllBanners = `-- name: ListAllBanners :many
+SELECT banner_id, school_id, title, image_url, target_url, is_active, "order", created_at, updated_at FROM banners
+WHERE (school_id = $1 OR $2::boolean = true)
+ORDER BY created_at DESC
+`
+
+type ListAllBannersParams struct {
+	SchoolID     uuid.NullUUID
+	IsSuperAdmin bool
+}
+
+func (q *Queries) ListAllBanners(ctx context.Context, arg ListAllBannersParams) ([]Banner, error) {
+	rows, err := q.db.QueryContext(ctx, listAllBanners, arg.SchoolID, arg.IsSuperAdmin)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Banner
+	for rows.Next() {
+		var i Banner
+		if err := rows.Scan(
+			&i.BannerID,
+			&i.SchoolID,
+			&i.Title,
+			&i.ImageUrl,
+			&i.TargetUrl,
+			&i.IsActive,
+			&i.Order,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAtRiskStudents = `-- name: ListAtRiskStudents :many
@@ -7391,6 +8686,94 @@ func (q *Queries) ListPayments(ctx context.Context, schoolID uuid.UUID) ([]ListP
 			&i.LastName,
 			&i.AmountDue,
 			&i.FeeName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReminderLists = `-- name: ListReminderLists :many
+SELECT list_id, school_id, user_id, title, color, created_at, updated_at FROM reminder_lists
+WHERE user_id = $1 AND (school_id = $2 OR school_id IS NULL)
+ORDER BY title
+`
+
+type ListReminderListsParams struct {
+	UserID   uuid.UUID
+	SchoolID uuid.NullUUID
+}
+
+// Reminders
+func (q *Queries) ListReminderLists(ctx context.Context, arg ListReminderListsParams) ([]ReminderList, error) {
+	rows, err := q.db.QueryContext(ctx, listReminderLists, arg.UserID, arg.SchoolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReminderList
+	for rows.Next() {
+		var i ReminderList
+		if err := rows.Scan(
+			&i.ListID,
+			&i.SchoolID,
+			&i.UserID,
+			&i.Title,
+			&i.Color,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRemindersByList = `-- name: ListRemindersByList :many
+SELECT reminder_id, list_id, user_id, title, notes, due_date, priority, is_completed, created_at, updated_at FROM reminders
+WHERE list_id = $1 AND user_id = $2
+ORDER BY due_date ASC, created_at DESC
+`
+
+type ListRemindersByListParams struct {
+	ListID uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) ListRemindersByList(ctx context.Context, arg ListRemindersByListParams) ([]Reminder, error) {
+	rows, err := q.db.QueryContext(ctx, listRemindersByList, arg.ListID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Reminder
+	for rows.Next() {
+		var i Reminder
+		if err := rows.Scan(
+			&i.ReminderID,
+			&i.ListID,
+			&i.UserID,
+			&i.Title,
+			&i.Notes,
+			&i.DueDate,
+			&i.Priority,
+			&i.IsCompleted,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -7764,7 +9147,7 @@ const updateAssignment = `-- name: UpdateAssignment :one
 UPDATE assignments
 SET title = $3, description = $4, due_date = $5, max_score = $6, assignment_type = $7, file_url = $8, updated_at = CURRENT_TIMESTAMP
 WHERE assignment_id = $1 AND school_id = $2
-RETURNING assignment_id, school_id, class_id, teacher_id, title, description, due_date, max_score, assignment_type, file_url, quiz_id, grade_category_id, created_at, updated_at
+RETURNING assignment_id, school_id, class_id, teacher_id, title, description, due_date, max_score, assignment_type, file_url, quiz_id, grade_category_id, created_at, updated_at, subject_id
 `
 
 type UpdateAssignmentParams struct {
@@ -7809,6 +9192,7 @@ func (q *Queries) UpdateAssignment(ctx context.Context, arg UpdateAssignmentPara
 		&i.GradeCategoryID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SubjectID,
 	)
 	return i, err
 }
@@ -7882,6 +9266,46 @@ func (q *Queries) UpdateBadge(ctx context.Context, arg UpdateBadgeParams) (Badge
 		&i.Description,
 		&i.IconUrl,
 		&i.Criteria,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateBanner = `-- name: UpdateBanner :one
+UPDATE banners
+SET title = $2, image_url = $3, target_url = $4, is_active = $5, "order" = $6, updated_at = CURRENT_TIMESTAMP
+WHERE banner_id = $1
+RETURNING banner_id, school_id, title, image_url, target_url, is_active, "order", created_at, updated_at
+`
+
+type UpdateBannerParams struct {
+	BannerID  uuid.UUID
+	Title     sql.NullString
+	ImageUrl  string
+	TargetUrl sql.NullString
+	IsActive  bool
+	Order     int32
+}
+
+func (q *Queries) UpdateBanner(ctx context.Context, arg UpdateBannerParams) (Banner, error) {
+	row := q.db.QueryRowContext(ctx, updateBanner,
+		arg.BannerID,
+		arg.Title,
+		arg.ImageUrl,
+		arg.TargetUrl,
+		arg.IsActive,
+		arg.Order,
+	)
+	var i Banner
+	err := row.Scan(
+		&i.BannerID,
+		&i.SchoolID,
+		&i.Title,
+		&i.ImageUrl,
+		&i.TargetUrl,
+		&i.IsActive,
+		&i.Order,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -8160,7 +9584,7 @@ const updateLearningMaterial = `-- name: UpdateLearningMaterial :one
 UPDATE learning_materials
 SET title = $3, description = $4, file_url = $5, material_type = $6, class_id = $7, course_id = $8, updated_at = CURRENT_TIMESTAMP
 WHERE material_id = $1 AND school_id = $2
-RETURNING material_id, school_id, uploaded_by_user_id, class_id, course_id, title, description, file_url, content, material_type, external_data, uploaded_at, created_at, updated_at
+RETURNING material_id, school_id, uploaded_by_user_id, class_id, course_id, title, description, file_url, content, material_type, external_data, uploaded_at, created_at, updated_at, subject_id
 `
 
 type UpdateLearningMaterialParams struct {
@@ -8201,6 +9625,7 @@ func (q *Queries) UpdateLearningMaterial(ctx context.Context, arg UpdateLearning
 		&i.UploadedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SubjectID,
 	)
 	return i, err
 }
@@ -8437,6 +9862,37 @@ func (q *Queries) UpdateQuiz(ctx context.Context, arg UpdateQuizParams) (Quiz, e
 		&i.DurationMinutes,
 		&i.StartTime,
 		&i.EndTime,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateReminderStatus = `-- name: UpdateReminderStatus :one
+UPDATE reminders
+SET is_completed = $2, updated_at = CURRENT_TIMESTAMP
+WHERE reminder_id = $1 AND user_id = $3
+RETURNING reminder_id, list_id, user_id, title, notes, due_date, priority, is_completed, created_at, updated_at
+`
+
+type UpdateReminderStatusParams struct {
+	ReminderID  uuid.UUID
+	IsCompleted bool
+	UserID      uuid.UUID
+}
+
+func (q *Queries) UpdateReminderStatus(ctx context.Context, arg UpdateReminderStatusParams) (Reminder, error) {
+	row := q.db.QueryRowContext(ctx, updateReminderStatus, arg.ReminderID, arg.IsCompleted, arg.UserID)
+	var i Reminder
+	err := row.Scan(
+		&i.ReminderID,
+		&i.ListID,
+		&i.UserID,
+		&i.Title,
+		&i.Notes,
+		&i.DueDate,
+		&i.Priority,
+		&i.IsCompleted,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -8885,6 +10341,34 @@ func (q *Queries) UpsertStudentRiskScore(ctx context.Context, arg UpsertStudentR
 		&i.RiskScore,
 		&i.RiskLevel,
 		&i.LastCalculated,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const validateParentChildRelationship = `-- name: ValidateParentChildRelationship :one
+SELECT relationship_id, school_id, parent_user_id, student_user_id, relationship_type, created_at, updated_at FROM parent_student_relationships
+WHERE parent_user_id = $1 AND student_user_id = $2 AND school_id = $3
+LIMIT 1
+`
+
+type ValidateParentChildRelationshipParams struct {
+	ParentUserID  uuid.UUID
+	StudentUserID uuid.UUID
+	SchoolID      uuid.UUID
+}
+
+// Parent-Child: Validate relationship
+func (q *Queries) ValidateParentChildRelationship(ctx context.Context, arg ValidateParentChildRelationshipParams) (ParentStudentRelationship, error) {
+	row := q.db.QueryRowContext(ctx, validateParentChildRelationship, arg.ParentUserID, arg.StudentUserID, arg.SchoolID)
+	var i ParentStudentRelationship
+	err := row.Scan(
+		&i.RelationshipID,
+		&i.SchoolID,
+		&i.ParentUserID,
+		&i.StudentUserID,
+		&i.RelationshipType,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

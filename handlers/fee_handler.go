@@ -70,7 +70,37 @@ func (h *FeeHandler) GetStudentFees(w http.ResponseWriter, r *http.Request) {
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID
 
-	studentFees, err := h.Queries.GetStudentFeesBySchool(r.Context(), schoolID)
+	studentIDStr := r.URL.Query().Get("studentId")
+	var studentID uuid.UUID
+	if studentIDStr != "" {
+		studentID, _ = uuid.Parse(studentIDStr)
+	} else if userCtx.RoleName == "Student" {
+		studentID = userCtx.UserID
+	}
+
+	var studentFees interface{}
+	var err error
+
+	if studentID != uuid.Nil {
+		// Authorization check: Students can only see their own fees.
+		// Parents check would need more logic to verify relationship.
+		if userCtx.RoleName == "Student" && userCtx.UserID != studentID {
+			middleware.ForbiddenError(w, "You can only view your own fees", nil)
+			return
+		}
+		studentFees, err = h.Queries.GetStudentFeesByStudent(r.Context(), db.GetStudentFeesByStudentParams{
+			StudentID: studentID,
+			SchoolID:  schoolID,
+		})
+	} else {
+		// If no studentId provided and not a student, fetch all for school (Admin view)
+		if !middleware.IsAdmin(userCtx.RoleName) {
+			middleware.ForbiddenError(w, "Insufficient permissions", nil)
+			return
+		}
+		studentFees, err = h.Queries.GetStudentFeesBySchool(r.Context(), schoolID)
+	}
+
 	if err != nil {
 		middleware.InternalError(w, "Could not fetch student fees", err)
 		return

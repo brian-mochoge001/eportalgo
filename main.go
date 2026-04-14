@@ -1,16 +1,13 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
-	firebase "firebase.google.com/go/v4"
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/brian-mochoge001/eportalgo/handlers"
 	custom_mw "github.com/brian-mochoge001/eportalgo/middleware"
@@ -25,11 +22,10 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/cors"
 	"github.com/unrolled/secure"
-	"google.golang.org/api/option"
 )
 
 func main() {
-	// Load environment variables from .env file
+	// Load environment variables
 	if err := godotenv.Load(); err != nil {
 		log.Println("Warning: .env file not found, using system environment variables")
 	}
@@ -53,53 +49,12 @@ func main() {
 	fmt.Println("Successfully connected to the database!")
 	queries := db.New(conn)
 
-	// Initialize Firebase Admin SDK
-	credsPath := os.Getenv("FIREBASE_CREDENTIALS_PATH")
-	
-	// If env var is missing, try common locations
-	if credsPath == "" {
-		possiblePaths := []string{
-			"/etc/secrets/eschool-infinnitydevelopers-firebase-adminsdk.json",
-			"eschool-infinnitydevelopers-firebase-adminsdk.json",
-		}
-		for _, p := range possiblePaths {
-			if _, err := os.Stat(p); err == nil {
-				credsPath = p
-				fmt.Printf("Auto-detected Firebase credentials at: %s\n", p)
-				break
-			}
-		}
+	// JWKS URL for BetterAuth JWT verification
+	jwksURL := os.Getenv("JWKS_URL")
+	if jwksURL == "" {
+		jwksURL = "http://localhost:3001/api/auth/jwks"
 	}
-
-	if credsPath == "" {
-		fmt.Println("DEBUG: FIREBASE_CREDENTIALS_PATH is empty and no fallback files found. Available environment variables (keys only):")
-		for _, e := range os.Environ() {
-			pair := strings.SplitN(e, "=", 2)
-			fmt.Printf("- %s\n", pair[0])
-		}
-		log.Fatal("FIREBASE_CREDENTIALS_PATH environment variable is required or credentials must exist at /etc/secrets/eschool-infinnitydevelopers-firebase-adminsdk.json")
-	}
-
-	// Verify file exists
-	info, err := os.Stat(credsPath)
-	if err != nil {
-		log.Fatalf("Firebase credentials file not found at %s: %v", credsPath, err)
-	}
-	fmt.Printf("Firebase credentials file found. Size: %d bytes\n", info.Size())
-
-	// Force GOOGLE_APPLICATION_CREDENTIALS for underlying libraries
-	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credsPath)
-
-	opt := option.WithCredentialsFile(credsPath)
-	app, err := firebase.NewApp(context.Background(), nil, opt)
-	if err != nil {
-		log.Fatalf("Error initializing Firebase App: %v", err)
-	}
-
-	firebaseAuth, err := app.Auth(context.Background())
-	if err != nil {
-		log.Fatalf("Error getting Firebase Auth client: %v", err)
-	}
+	fmt.Printf("Using JWKS URL: %s\n", jwksURL)
 
 	// Initialize Redis client
 	redisURL := os.Getenv("REDIS_URL")
@@ -145,13 +100,12 @@ func main() {
 		IsDevelopment:         os.Getenv("NODE_ENV") != "production",
 	})
 
-	// Initialize Services
-	schoolService := services.NewSchoolService(queries, firebaseAuth, redisClient)
-	authService := services.NewAuthService(queries, firebaseAuth)
+	schoolService := services.NewSchoolService(queries, redisClient)
+	authService := services.NewAuthService(queries)
 	studentService := services.NewStudentService(queries, conn)
 	assignmentService := services.NewAssignmentService(queries, asynqClient)
 	timetableService := services.NewTimetableService(queries, conn)
-	userService := services.NewUserService(queries, conn, firebaseAuth)
+	userService := services.NewUserService(queries, conn)
 	meetingService := services.NewMeetingService(queries, conn)
 	courseService := services.NewCourseService(queries, conn)
 	eventService := services.NewEventService(queries, conn)
@@ -162,9 +116,8 @@ func main() {
 	quizService := services.NewQuizService(queries, conn)
 	reportingService := services.NewReportingService(queries)
 
-	// Initialize Handlers
 	schoolHandler := handlers.NewSchoolHandler(queries, schoolService, redisClient)
-	authHandler := handlers.NewAuthHandler(queries, authService, firebaseAuth)
+	authHandler := handlers.NewAuthHandler(queries, authService)
 	userHandler := handlers.NewUserHandler(queries, userService)
 	courseHandler := handlers.NewCourseHandler(queries, courseService)
 	departmentHandler := handlers.NewDepartmentHandler(queries)
@@ -208,6 +161,8 @@ func main() {
 	timetableHandler := handlers.NewTimetableHandler(queries, timetableService)
 	transcriptHandler := handlers.NewTranscriptHandler(queries, reportingService)
 	transferRequestHandler := handlers.NewTransferRequestHandler(queries)
+	bannerHandler := handlers.NewBannerHandler(queries)
+	reminderHandler := handlers.NewReminderHandler(queries)
 
 	// Set up router
 	r := chi.NewRouter()
@@ -231,7 +186,7 @@ func main() {
 	r.Use(custom_mw.ErrorHandler)
 	r.Use(middleware.Recoverer)
 
-	// Start Asynq server
+	// Asynq server
 	taskHandler := worker.NewTaskHandler(queries)
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(worker.TypeAssignmentNotification, taskHandler.HandleAssignmentNotification)
@@ -254,13 +209,19 @@ func main() {
 
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", authHandler.RegisterUser)
-			r.Post("/login", authHandler.LoginUser)
+
+			// Protected auth routes (require valid JWT)
+			r.Group(func(r chi.Router) {
+				r.Use(custom_mw.AuthMiddleware(jwksURL, queries))
+				r.Get("/me", authHandler.GetMe)
+				r.Post("/login", authHandler.LoginUser)
+			})
 		})
 
 		r.Route("/schools", func(r chi.Router) {
 			r.Post("/register", schoolHandler.RegisterSchool)
 			r.Group(func(r chi.Router) {
-				r.Use(custom_mw.AuthMiddleware(firebaseAuth, queries))
+				r.Use(custom_mw.AuthMiddleware(jwksURL, queries))
 				r.Put("/{schoolId}/verify", schoolHandler.VerifySchool)
 				r.Get("/{schoolId}/settings", schoolHandler.GetSchoolSettings)
 				r.Put("/{schoolId}/settings", schoolHandler.UpdateSchoolSettings)
@@ -269,7 +230,7 @@ func main() {
 
 		// Protected routes
 		r.Group(func(r chi.Router) {
-			r.Use(custom_mw.AuthMiddleware(firebaseAuth, queries))
+			r.Use(custom_mw.AuthMiddleware(jwksURL, queries))
 			r.Use(custom_mw.RLSMiddleware(conn))
 			r.Use(custom_mw.AuditMiddleware(asynqClient))
 
@@ -278,6 +239,17 @@ func main() {
 				r.Get("/school/{schoolId}", userHandler.GetUsersBySchool)
 				r.Post("/{userId}/student-profile", userHandler.AddStudentProfile)
 				r.Post("/{userId}/parent-profile", userHandler.AddParentProfile)
+				r.Get("/profile", userHandler.GetFullProfile)
+				r.Get("/detailed-grades", userHandler.GetDetailedGrades)
+			})
+
+			r.Route("/reminders", func(r chi.Router) {
+				r.Get("/lists", reminderHandler.ListReminderLists)
+				r.Post("/lists", reminderHandler.CreateReminderList)
+				r.Get("/{listId}", reminderHandler.ListReminders)
+				r.Post("/", reminderHandler.CreateReminder)
+				r.Put("/{id}/status", reminderHandler.UpdateReminderStatus)
+				r.Delete("/{id}", reminderHandler.DeleteReminder)
 			})
 
 			r.Route("/courses", func(r chi.Router) {
@@ -300,6 +272,9 @@ func main() {
 				r.Get("/{id}", subjectHandler.GetSubjectByID)
 				r.Put("/{id}", subjectHandler.UpdateSubject)
 				r.Delete("/{id}", subjectHandler.DeleteSubject)
+				r.Get("/{id}/alerts", subjectHandler.GetSubjectAlerts)
+				r.Get("/{id}/materials", subjectHandler.GetSubjectMaterials)
+				r.Get("/{id}/assignments", subjectHandler.GetSubjectAssignments)
 			})
 
 			r.Route("/classes", func(r chi.Router) {
@@ -322,10 +297,23 @@ func main() {
 			})
 
 			r.Route("/assignments", func(r chi.Router) {
+				r.Get("/my", assignmentHandler.GetMyAssignments)
+				r.Get("/{id}", assignmentHandler.GetAssignmentByID)
 				r.Get("/class/{class_id}", assignmentHandler.GetAssignments)
 				r.Post("/", assignmentHandler.CreateAssignment)
 				r.Put("/{id}", assignmentHandler.UpdateAssignment)
 				r.Delete("/{id}", assignmentHandler.DeleteAssignment)
+			})
+
+			r.Route("/banners", func(r chi.Router) {
+				r.Get("/active", bannerHandler.GetActiveBanners)
+				r.Group(func(r chi.Router) {
+					r.Use(custom_mw.Authorize("Executive Administrator", "Developer"))
+					r.Get("/", bannerHandler.ListBanners)
+					r.Post("/", bannerHandler.CreateBanner)
+					r.Put("/{id}", bannerHandler.UpdateBanner)
+					r.Delete("/{id}", bannerHandler.DeleteBanner)
+				})
 			})
 
 			r.Route("/audit-logs", func(r chi.Router) {
@@ -339,7 +327,7 @@ func main() {
 			})
 
 			r.Route("/badges", func(r chi.Router) {
-				r.Get("/", badgeHandler.GetBadges)
+				r.Get("/", badgeHandler.ListBadgesBySchool)
 				r.Post("/", badgeHandler.CreateBadge)
 				r.Get("/{id}", badgeHandler.GetBadgeByID)
 				r.Put("/{id}", badgeHandler.UpdateBadge)
@@ -455,6 +443,16 @@ func main() {
 			r.Route("/parents", func(r chi.Router) {
 				r.Get("/", parentHandler.GetParents)
 				r.Get("/{id}", parentHandler.GetParentByID)
+				r.Get("/children", parentHandler.GetChildren)
+
+				// Parent monitoring routes (parent-only)
+				r.Route("/children/{childId}", func(r chi.Router) {
+					r.Use(custom_mw.Authorize("Parent"))
+					r.Get("/attendance", parentHandler.GetChildAttendance)
+					r.Get("/grades", parentHandler.GetChildGrades)
+					r.Get("/assignments", parentHandler.GetChildAssignments)
+					r.Get("/fees", parentHandler.GetChildFees)
+				})
 			})
 			r.Route("/payments", func(r chi.Router) {
 				r.Get("/", paymentHandler.GetPayments)

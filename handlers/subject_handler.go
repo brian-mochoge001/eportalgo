@@ -173,5 +173,53 @@ func (h *SubjectHandler) DeleteSubject(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *SubjectHandler) GetSubjectAlerts(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, _ := uuid.Parse(idStr)
+	userCtx, _ := middleware.GetUser(r.Context())
+
+	alerts, err := h.Queries.GetNotificationsBySubject(r.Context(), db.GetNotificationsBySubjectParams{
+		SubjectID:   uuid.NullUUID{UUID: id, Valid: true},
+		RecipientID: userCtx.UserID,
+	})
+	if err != nil {
+		middleware.InternalError(w, "Could not fetch subject alerts", err)
+		return
+	}
+	json.NewEncoder(w).Encode(alerts)
+}
+
+func (h *SubjectHandler) GetSubjectMaterials(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, _ := uuid.Parse(idStr)
+	userCtx, _ := middleware.GetUser(r.Context())
+
+	materials, err := h.Queries.GetMaterialsBySubject(r.Context(), db.GetMaterialsBySubjectParams{
+		SubjectID: uuid.NullUUID{UUID: id, Valid: true},
+		SchoolID:  userCtx.SchoolID.UUID,
+	})
+	if err != nil {
+		middleware.InternalError(w, "Could not fetch subject materials", err)
+		return
+	}
+	json.NewEncoder(w).Encode(materials)
+}
+
+func (h *SubjectHandler) GetSubjectAssignments(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, _ := uuid.Parse(idStr)
+	userCtx, _ := middleware.GetUser(r.Context())
+
+	assignments, err := h.Queries.GetAssignmentsBySubject(r.Context(), db.GetAssignmentsBySubjectParams{
+		SubjectID: uuid.NullUUID{UUID: id, Valid: true},
+		SchoolID:  userCtx.SchoolID.UUID,
+	})
+	if err != nil {
+		middleware.InternalError(w, "Could not fetch subject assignments", err)
+		return
+	}
+	json.NewEncoder(w).Encode(assignments)
+}
+
 
 

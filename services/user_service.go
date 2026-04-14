@@ -6,19 +6,17 @@ import (
 	"fmt"
 	"time"
 
-	"firebase.google.com/go/v4/auth"
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/google/uuid"
 )
 
 type UserService struct {
-	Queries      *db.Queries
-	DB           *sql.DB
-	FirebaseAuth *auth.Client
+	Queries *db.Queries
+	DB      *sql.DB
 }
 
-func NewUserService(q *db.Queries, d *sql.DB, fb *auth.Client) *UserService {
-	return &UserService{Queries: q, DB: d, FirebaseAuth: fb}
+func NewUserService(q *db.Queries, d *sql.DB) *UserService {
+	return &UserService{Queries: q, DB: d}
 }
 
 type AddUserParams struct {
@@ -27,7 +25,6 @@ type AddUserParams struct {
 	FirstName string
 	LastName  string
 	RoleName  string
-	Password  string
 }
 
 func (s *UserService) AddUser(ctx context.Context, p AddUserParams) (db.User, error) {
@@ -57,45 +54,19 @@ func (s *UserService) AddUser(ctx context.Context, p AddUserParams) (db.User, er
 		return db.User{}, fmt.Errorf("user with this email already exists")
 	}
 
-	// Check Firebase
-	firebaseUser, err := s.FirebaseAuth.GetUserByEmail(ctx, p.Email)
-	if err == nil && firebaseUser != nil {
-		return db.User{}, fmt.Errorf("email already in use in Firebase")
-	}
-
-	// Create in Firebase
-	userToCreate := (&auth.UserToCreate{}).
-		Email(p.Email).
-		Password(p.Password).
-		DisplayName(p.FirstName + " " + p.LastName)
-	
-	userRecord, err := s.FirebaseAuth.CreateUser(ctx, userToCreate)
-	if err != nil {
-		return db.User{}, fmt.Errorf("failed to create firebase user: %w", err)
-	}
-
 	// Create in local DB
+	// BetterAuth handles the auth-side user creation separately
 	newUser, err := qtx.CreateUser(ctx, db.CreateUserParams{
 		SchoolID:    uuid.NullUUID{UUID: p.SchoolID, Valid: true},
 		RoleID:      role.RoleID,
 		FirstName:   p.FirstName,
 		LastName:    p.LastName,
 		Email:       p.Email,
-		FirebaseUid: sql.NullString{String: userRecord.UID, Valid: true},
+		FirebaseUid: sql.NullString{Valid: false}, // No longer used
 		IsActive:    true,
 	})
 	if err != nil {
 		return db.User{}, fmt.Errorf("failed to create database user: %w", err)
-	}
-
-	// Set claims
-	claims := map[string]interface{}{
-		"role":         role.RoleName,
-		"schoolId":     p.SchoolID.String(),
-		"schoolStatus": "pending",
-	}
-	if err := s.FirebaseAuth.SetCustomUserClaims(ctx, userRecord.UID, claims); err != nil {
-		return db.User{}, fmt.Errorf("failed to set firebase claims: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

@@ -42,6 +42,47 @@ func (h *AssignmentHandler) GetAssignments(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(assignments)
 }
 
+func (h *AssignmentHandler) GetMyAssignments(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
+	userCtx, _ := middleware.GetUser(r.Context())
+	schoolID := userCtx.SchoolID.UUID
+
+	assignments, err := q.GetMyAssignments(r.Context(), db.GetMyAssignmentsParams{
+		StudentID: userCtx.UserID,
+		SchoolID:  schoolID,
+	})
+	if err != nil {
+		middleware.InternalError(w, "Could not fetch assignments", err)
+		return
+	}
+
+	json.NewEncoder(w).Encode(assignments)
+}
+
+func (h *AssignmentHandler) GetAssignmentByID(w http.ResponseWriter, r *http.Request) {
+	q := GetQueries(r.Context(), h.Queries)
+	idStr := chi.URLParam(r, "id")
+	id, _ := uuid.Parse(idStr)
+
+	userCtx, _ := middleware.GetUser(r.Context())
+	schoolID := userCtx.SchoolID.UUID
+
+	assignment, err := q.GetAssignmentByID(r.Context(), db.GetAssignmentByIDParams{
+		AssignmentID: id,
+		SchoolID:     schoolID,
+	})
+	if err != nil {
+		if err == sql.ErrNoRows {
+			middleware.NotFoundError(w, "Assignment not found", err)
+			return
+		}
+		middleware.InternalError(w, "Could not fetch assignment", err)
+		return
+	}
+
+	json.NewEncoder(w).Encode(assignment)
+}
+
 func (h *AssignmentHandler) CreateAssignment(w http.ResponseWriter, r *http.Request) {
 	userCtx, _ := middleware.GetUser(r.Context())
 	schoolID := userCtx.SchoolID.UUID

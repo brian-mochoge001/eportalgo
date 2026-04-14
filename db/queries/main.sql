@@ -264,6 +264,14 @@ WHERE assignment_id = $1 AND school_id = $2 LIMIT 1;
 SELECT * FROM assignments
 WHERE class_id = $1 AND school_id = $2;
 
+-- name: GetMyAssignments :many
+SELECT a.*, ac.class_name
+FROM assignments a
+JOIN academic_classes ac ON a.class_id = ac.class_id
+JOIN enrollments e ON ac.class_id = e.class_id
+WHERE e.student_id = $1 AND a.school_id = $2
+ORDER BY a.due_date ASC;
+
 -- name: DeleteAssignment :exec
 DELETE FROM assignments
 WHERE assignment_id = $1 AND school_id = $2 AND teacher_id = $3;
@@ -834,6 +842,35 @@ INSERT INTO fee_structures (
 )
 RETURNING *;
 
+-- Banners
+-- name: CreateBanner :one
+INSERT INTO banners (
+  school_id, title, image_url, target_url, is_active, "order"
+) VALUES (
+  $1, $2, $3, $4, $5, $6
+)
+RETURNING *;
+
+-- name: GetActiveBanners :many
+SELECT * FROM banners
+WHERE (school_id = $1 OR school_id IS NULL) AND is_active = true
+ORDER BY "order" ASC, created_at DESC;
+
+-- name: ListAllBanners :many
+SELECT * FROM banners
+WHERE (school_id = $1 OR sqlc.arg('is_super_admin')::boolean = true)
+ORDER BY created_at DESC;
+
+-- name: UpdateBanner :one
+UPDATE banners
+SET title = $2, image_url = $3, target_url = $4, is_active = $5, "order" = $6, updated_at = CURRENT_TIMESTAMP
+WHERE banner_id = $1
+RETURNING *;
+
+-- name: DeleteBanner :exec
+DELETE FROM banners
+WHERE banner_id = $1;
+
 -- Student Fees
 -- name: GetStudentFeesBySchool :many
 SELECT sf.*, u.first_name, u.last_name, u.email, fs.fee_name, fs.amount as fee_amount
@@ -841,6 +878,13 @@ FROM student_fees sf
 JOIN users u ON sf.student_id = u.user_id
 JOIN fee_structures fs ON sf.fee_structure_id = fs.fee_structure_id
 WHERE sf.school_id = $1
+ORDER BY sf.created_at DESC;
+
+-- name: GetStudentFeesByStudent :many
+SELECT sf.*, fs.fee_name, fs.amount as fee_amount
+FROM student_fees sf
+JOIN fee_structures fs ON sf.fee_structure_id = fs.fee_structure_id
+WHERE sf.student_id = $1 AND sf.school_id = $2
 ORDER BY sf.created_at DESC;
 
 -- name: CreateStudentFee :one
@@ -856,6 +900,14 @@ UPDATE student_fees
 SET amount_paid = amount_paid + $2::decimal, updated_at = CURRENT_TIMESTAMP
 WHERE student_fee_id = $1
 RETURNING *;
+
+-- name: GetChildrenForParent :many
+SELECT u.user_id, u.first_name, u.last_name, u.profile_picture_url, sp.current_grade_level, s.school_name
+FROM parent_student_relationships psr
+JOIN users u ON psr.student_user_id = u.user_id
+JOIN student_profiles sp ON u.user_id = sp.user_id
+JOIN schools s ON psr.school_id = s.school_id
+WHERE psr.parent_user_id = $1 AND psr.school_id = $2;
 
 -- Grades: GetBySubmission
 -- name: GetGradesBySubmission :many
@@ -1467,3 +1519,161 @@ INSERT INTO school_settings (school_id)
 VALUES ($1)
 RETURNING *;
 
+-- =============================================
+-- PARENT MONITORING & AUTH QUERIES
+-- =============================================
+
+-- Auth: Get user by email without school_id constraint (for JWT lookup)
+-- name: GetUserByEmailOnly :one
+SELECT u.*, r.role_name
+FROM users u
+JOIN roles r ON u.role_id = r.role_id
+WHERE u.email = $1 LIMIT 1;
+
+-- Auth: Get user by ID (for JWT sub claim lookup)
+-- name: GetUserByID :one
+SELECT u.*, r.role_name
+FROM users u
+JOIN roles r ON u.role_id = r.role_id
+WHERE u.user_id = $1 LIMIT 1;
+
+-- Parent-Child: Validate relationship
+-- name: ValidateParentChildRelationship :one
+SELECT * FROM parent_student_relationships
+WHERE parent_user_id = $1 AND student_user_id = $2 AND school_id = $3
+LIMIT 1;
+
+-- Parent-Child: Create relationship
+-- name: CreateParentStudentRelationship :one
+INSERT INTO parent_student_relationships (
+  parent_user_id, student_user_id, school_id, relationship_type
+) VALUES (
+  $1, $2, $3, $4
+)
+RETURNING *;
+
+-- Parent Monitoring: Get child attendance records
+-- name: GetChildAttendance :many
+SELECT a.*, ac.class_name
+FROM attendance_records a
+JOIN academic_classes ac ON a.class_id = ac.class_id
+WHERE a.student_id = $1 AND a.school_id = $2
+ORDER BY a.attendance_date DESC;
+
+-- Parent Monitoring: Get child grades
+-- name: GetChildGrades :many
+SELECT g.*, s.submission_id, a.title as assignment_title, a.max_score,
+       u.first_name as grader_first_name, u.last_name as grader_last_name
+FROM grades g
+JOIN submissions s ON g.submission_id = s.submission_id
+JOIN assignments a ON s.assignment_id = a.assignment_id
+LEFT JOIN users u ON g.graded_by_user_id = u.user_id
+WHERE s.student_id = $1 AND g.school_id = $2
+ORDER BY g.graded_at DESC;
+
+-- Parent Monitoring: Get child assignments
+-- name: GetChildAssignments :many
+SELECT a.*, ac.class_name,
+       (SELECT s.status FROM submissions s WHERE s.student_id = $1 AND s.assignment_id = a.assignment_id LIMIT 1) as submission_status
+FROM assignments a
+JOIN academic_classes ac ON a.class_id = ac.class_id
+JOIN enrollments e ON ac.class_id = e.class_id
+WHERE e.student_id = $1 AND a.school_id = $2
+ORDER BY a.due_date DESC;
+
+-- Parent Monitoring: Get child fees
+-- name: GetChildFees :many
+SELECT sf.*, fs.fee_name, fs.amount as fee_amount,
+       COALESCE(sf.amount_paid, 0) as total_paid,
+       (sf.amount_due - COALESCE(sf.amount_paid, 0)) as balance
+FROM student_fees sf
+JOIN fee_structures fs ON sf.fee_structure_id = fs.fee_structure_id
+WHERE sf.student_id = $1 AND sf.school_id = $2
+ORDER BY sf.due_date DESC;
+
+-- Reminders
+-- name: ListReminderLists :many
+SELECT * FROM reminder_lists
+WHERE user_id = $1 AND (school_id = $2 OR school_id IS NULL)
+ORDER BY title;
+
+-- name: CreateReminderList :one
+INSERT INTO reminder_lists (
+  school_id, user_id, title, color
+) VALUES (
+  $1, $2, $3, $4
+)
+RETURNING *;
+
+-- name: ListRemindersByList :many
+SELECT * FROM reminders
+WHERE list_id = $1 AND user_id = $2
+ORDER BY due_date ASC, created_at DESC;
+
+-- name: CreateReminder :one
+INSERT INTO reminders (
+  list_id, user_id, title, notes, due_date, priority
+) VALUES (
+  $1, $2, $3, $4, $5, $6
+)
+RETURNING *;
+
+-- name: UpdateReminderStatus :one
+UPDATE reminders
+SET is_completed = $2, updated_at = CURRENT_TIMESTAMP
+WHERE reminder_id = $1 AND user_id = $3
+RETURNING *;
+
+-- name: DeleteReminder :exec
+DELETE FROM reminders
+WHERE reminder_id = $1 AND user_id = $2;
+
+-- Subject Specific Data
+-- name: GetAssignmentsBySubject :many
+SELECT a.*, ac.class_name
+FROM assignments a
+JOIN academic_classes ac ON a.class_id = ac.class_id
+WHERE a.subject_id = $1 AND a.school_id = $2
+ORDER BY a.due_date DESC;
+
+-- name: GetMaterialsBySubject :many
+SELECT lm.*, u.first_name as uploader_first_name, u.last_name as uploader_last_name
+FROM learning_materials lm
+JOIN users u ON lm.uploaded_by_user_id = u.user_id
+WHERE lm.subject_id = $1 AND lm.school_id = $2
+ORDER BY lm.uploaded_at DESC;
+
+-- name: GetNotificationsBySubject :many
+SELECT n.*, u.first_name as sender_first_name, u.last_name as sender_last_name, nr.is_read, nr.read_at
+FROM notifications n
+JOIN notification_recipients nr ON n.notification_id = nr.notification_id
+LEFT JOIN users u ON n.sender_id = u.user_id
+WHERE n.subject_id = $1 AND nr.recipient_id = $2
+ORDER BY n.sent_at DESC;
+
+-- Full Profile
+-- name: GetStudentFullProfile :one
+SELECT u.*, r.role_name, sp.enrollment_number, sp.current_grade_level, sp.admission_date, ac.class_name as current_class_name
+FROM users u
+JOIN roles r ON u.role_id = r.role_id
+JOIN student_profiles sp ON u.user_id = sp.user_id
+LEFT JOIN academic_classes ac ON sp.current_class_id = ac.class_id
+WHERE u.user_id = $1 LIMIT 1;
+
+-- name: GetParentFullProfile :one
+SELECT u.*, r.role_name, pp.home_address, pp.occupation, pp.emergency_contact_name, pp.emergency_contact_phone
+FROM users u
+JOIN roles r ON u.role_id = r.role_id
+JOIN parent_profiles pp ON u.user_id = pp.user_id
+WHERE u.user_id = $1 LIMIT 1;
+
+-- Academic History
+-- name: GetDetailedGrades :many
+SELECT g.*, a.title as assignment_title, a.max_score, ac.class_name, s.subject_name
+FROM grades g
+JOIN submissions sub ON g.submission_id = sub.submission_id
+JOIN assignments a ON sub.assignment_id = a.assignment_id
+JOIN academic_classes ac ON a.class_id = ac.class_id
+JOIN subjects s ON a.subject_id = s.subject_id
+WHERE sub.student_id = $1 AND g.school_id = $2
+ORDER BY ac.academic_year DESC, ac.semester DESC, g.graded_at DESC;

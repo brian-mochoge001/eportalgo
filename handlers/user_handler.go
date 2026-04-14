@@ -31,7 +31,6 @@ func (h *UserHandler) AddUser(w http.ResponseWriter, r *http.Request) {
 		FirstName string `json:"firstName"`
 		LastName  string `json:"lastName"`
 		RoleName  string `json:"roleName"`
-		Password  string `json:"password"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -45,7 +44,6 @@ func (h *UserHandler) AddUser(w http.ResponseWriter, r *http.Request) {
 		FirstName: req.FirstName,
 		LastName:  req.LastName,
 		RoleName:  req.RoleName,
-		Password:  req.Password,
 	})
 	if err != nil {
 		middleware.InternalError(w, err.Error(), err)
@@ -169,4 +167,56 @@ func (h *UserHandler) AddParentProfile(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(profile)
+}
+
+func (h *UserHandler) GetFullProfile(w http.ResponseWriter, r *http.Request) {
+	userCtx, _ := middleware.GetUser(r.Context())
+
+	if userCtx.RoleName == "Student" {
+		profile, err := h.Queries.GetStudentFullProfile(r.Context(), userCtx.UserID)
+		if err != nil {
+			middleware.InternalError(w, "Could not fetch student profile", err)
+			return
+		}
+		json.NewEncoder(w).Encode(profile)
+	} else if userCtx.RoleName == "Parent" {
+		profile, err := h.Queries.GetParentFullProfile(r.Context(), userCtx.UserID)
+		if err != nil {
+			middleware.InternalError(w, "Could not fetch parent profile", err)
+			return
+		}
+		json.NewEncoder(w).Encode(profile)
+	} else {
+		// Default to base user info if no special profile
+		user, err := h.Queries.GetUserByID(r.Context(), userCtx.UserID)
+		if err != nil {
+			middleware.InternalError(w, "Could not fetch user", err)
+			return
+		}
+		json.NewEncoder(w).Encode(user)
+	}
+}
+
+func (h *UserHandler) GetDetailedGrades(w http.ResponseWriter, r *http.Request) {
+	userCtx, _ := middleware.GetUser(r.Context())
+	studentID := userCtx.UserID
+
+	// If parent, they can specify studentId in query
+	if userCtx.RoleName == "Parent" {
+		sidStr := r.URL.Query().Get("studentId")
+		if sidStr != "" {
+			sid, _ := uuid.Parse(sidStr)
+			studentID = sid
+		}
+	}
+
+	grades, err := h.Queries.GetDetailedGrades(r.Context(), db.GetDetailedGradesParams{
+		StudentID: studentID,
+		SchoolID:  userCtx.SchoolID.UUID,
+	})
+	if err != nil {
+		middleware.InternalError(w, "Could not fetch detailed grades", err)
+		return
+	}
+	json.NewEncoder(w).Encode(grades)
 }

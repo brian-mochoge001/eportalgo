@@ -8,20 +8,18 @@ import (
 	"fmt"
 	"strings"
 
-	"firebase.google.com/go/v4/auth"
 	"github.com/brian-mochoge001/eportalgo/db"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
 
 type SchoolService struct {
-	Queries      *db.Queries
-	FirebaseAuth *auth.Client
-	Redis        *redis.Client
+	Queries *db.Queries
+	Redis   *redis.Client
 }
 
-func NewSchoolService(q *db.Queries, fb *auth.Client, r *redis.Client) *SchoolService {
-	return &SchoolService{Queries: q, FirebaseAuth: fb, Redis: r}
+func NewSchoolService(q *db.Queries, r *redis.Client) *SchoolService {
+	return &SchoolService{Queries: q, Redis: r}
 }
 
 func generateSchoolInitial(name string) string {
@@ -45,16 +43,15 @@ func generateSchoolInitial(name string) string {
 }
 
 type RegisterSchoolRequest struct {
-	SchoolName       string
-	Subdomain        string
-	Address          string
-	PhoneNumber      string
-	Email            string
-	AdminFirstName   string
-	AdminLastName    string
-	AdminEmail       string
-	AdminFirebaseUid string
-	AdminRoleName    string
+	SchoolName     string
+	Subdomain      string
+	Address        string
+	PhoneNumber    string
+	Email          string
+	AdminFirstName string
+	AdminLastName  string
+	AdminEmail     string
+	AdminRoleName  string
 }
 
 type RegisterSchoolResponse struct {
@@ -114,7 +111,7 @@ func (s *SchoolService) RegisterSchool(ctx context.Context, req RegisterSchoolRe
 		FirstName:   req.AdminFirstName,
 		LastName:    req.AdminLastName,
 		Email:       req.AdminEmail,
-		FirebaseUid: sql.NullString{String: req.AdminFirebaseUid, Valid: true},
+		FirebaseUid: sql.NullString{Valid: false}, // No longer used
 		IsActive:    true,
 	})
 	if err != nil {
@@ -124,14 +121,6 @@ func (s *SchoolService) RegisterSchool(ctx context.Context, req RegisterSchoolRe
 	// Create Default School Settings
 	_, _ = s.Queries.CreateSchoolSetting(ctx, school.SchoolID)
 
-	// Set Firebase Custom Claims
-	claims := map[string]interface{}{
-		"role":         role.RoleName,
-		"schoolId":     school.SchoolID.String(),
-		"schoolStatus": school.Status,
-	}
-	_ = s.FirebaseAuth.SetCustomUserClaims(ctx, req.AdminFirebaseUid, claims)
-
 	return RegisterSchoolResponse{
 		School:    school,
 		AdminUser: adminUser,
@@ -140,7 +129,7 @@ func (s *SchoolService) RegisterSchool(ctx context.Context, req RegisterSchoolRe
 }
 
 func (s *SchoolService) VerifySchool(ctx context.Context, schoolID uuid.UUID, status string) (db.School, error) {
-	school, err := s.Queries.GetSchoolWithAdmin(ctx, schoolID)
+	_, err := s.Queries.GetSchoolWithAdmin(ctx, schoolID)
 	if err != nil {
 		return db.School{}, err
 	}
@@ -153,15 +142,6 @@ func (s *SchoolService) VerifySchool(ctx context.Context, schoolID uuid.UUID, st
 		return db.School{}, err
 	}
 
-	// Update Firebase claims for admin
-	if school.AdminFirebaseUid.Valid {
-		claims := map[string]interface{}{
-			"schoolStatus": updatedSchool.Status,
-			"schoolId":     updatedSchool.SchoolID.String(),
-			"role":         school.AdminRoleName,
-		}
-		_ = s.FirebaseAuth.SetCustomUserClaims(ctx, school.AdminFirebaseUid.String, claims)
-	}
-
 	return updatedSchool, nil
 }
+
